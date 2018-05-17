@@ -175,7 +175,7 @@ int main()
 			_orderkey = map["orderkey"].AsUInt32();
 			_partkey = map["partkey"].AsUInt32();
 			_suppkey = map["suppkey"].AsUInt32();
-			_linenumber = map["linenumber"].AsFloat();
+			_linenumber = map["linenumber"].AsUInt32();
 			_quantity = map["quantity"].AsFloat();
 			_extendedprice = map["extendedprice"].AsFloat();
 			_discount = map["discount"].AsFloat();
@@ -202,6 +202,131 @@ int main()
 	std::cout<<"Reading ROW (map) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
 	cout<<"Reading ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
 
+	// READ A INT using MAP	
+	avg = 0;
+	avg2 = 0;
+	minN = 1000000;
+	maxN = 0;
+	for(int i=0;i<n2;i++) {
+		avg = 0;
+		gettimeofday(&start, NULL);
+		for(int i=0;i<n;i++) {
+			map = flexbuffers::GetRoot(buf).AsMap();
+			_partkey = map["partkey"].AsUInt32();
+		}
+		gettimeofday(&end, NULL);
+		
+		t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+		avg += t;
+		avg /= n;
+		minN = minN<avg?minN:avg;
+		maxN = maxN>avg?maxN:avg;
+		avg2 += avg;
+	}
+	avg2 /= n2;
+	std::cout<<"Reading INT (map) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Reading INT: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+
+	// READ A FLOAT using MAP	
+	avg = 0;
+	avg2 = 0;
+	minN = 1000000;
+	maxN = 0;
+	for(int i=0;i<n2;i++) {
+		avg = 0;
+		gettimeofday(&start, NULL);
+		for(int i=0;i<n;i++) {
+			map = flexbuffers::GetRoot(buf).AsMap();
+			_extendedprice = map["extendedprice"].AsFloat();
+		}
+		gettimeofday(&end, NULL);
+		
+		t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+		avg += t;
+		avg /= n;
+		minN = minN<avg?minN:avg;
+		maxN = maxN>avg?maxN:avg;
+		avg2 += avg;
+	}
+	avg2 /= n2;
+	std::cout<<"Reading FLOAT (map) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Reading FLOAT: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+
+	// READ A BYTE using MAP	
+	avg = 0;
+	avg2 = 0;
+	minN = 1000000;
+	maxN = 0;
+	for(int i=0;i<n2;i++) {
+		avg = 0;
+		gettimeofday(&start, NULL);
+		for(int i=0;i<n;i++) {
+			map = flexbuffers::GetRoot(buf).AsMap();
+			_linestatus = map["linestatus"].AsUInt8();
+		}
+		gettimeofday(&end, NULL);
+		
+		t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+		avg += t;
+		avg /= n;
+		minN = minN<avg?minN:avg;
+		maxN = maxN>avg?maxN:avg;
+		avg2 += avg;
+	}
+	avg2 /= n2;
+	std::cout<<"Reading BYTE (map) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Reading BYTE: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+
+	// READ A DATE VEC using MAP	
+	avg = 0;
+	avg2 = 0;
+	minN = 1000000;
+	maxN = 0;
+	for(int i=0;i<n2;i++) {
+		avg = 0;
+		gettimeofday(&start, NULL);
+		for(int i=0;i<n;i++) {
+			map = flexbuffers::GetRoot(buf).AsMap();
+			_commitdate = map["commitdate"].AsVector();
+		}
+		gettimeofday(&end, NULL);
+		
+		t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+		avg += t;
+		avg /= n;
+		minN = minN<avg?minN:avg;
+		maxN = maxN>avg?maxN:avg;
+		avg2 += avg;
+	}
+	avg2 /= n2;
+	std::cout<<"Reading VECTOR (map) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Reading VECTOR: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+
+	// READ A String using MAP	
+	avg = 0;
+	avg2 = 0;
+	minN = 1000000;
+	maxN = 0;
+	for(int i=0;i<n2;i++) {
+		avg = 0;
+		gettimeofday(&start, NULL);
+		for(int i=0;i<n;i++) {
+			map = flexbuffers::GetRoot(buf).AsMap();
+			_comment = map["comment"].AsString();
+		}
+		gettimeofday(&end, NULL);
+		
+		t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+		avg += t;
+		avg /= n;
+		minN = minN<avg?minN:avg;
+		maxN = maxN>avg?maxN:avg;
+		avg2 += avg;
+	}
+	avg2 /= n2;
+	cout<<"Reading String (map) took "<< avg2<<" microseconds over "<<n<<" runs"<<endl;
+	cout<<"Reading String: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+
 // -----------------------------------------CHECK CONTENTS OF MAP FLEXBUFFER----------------------------------	
 	assertionCheck(orderkey, partkey, suppkey, linenumber, quantity, extendedprice, discount, tax, returnflag, linestatus, shipdate, receiptdate, commitdate,
 			shipinstruct, shipmode, comment, _orderkey, _partkey, _suppkey, _linenumber, _quantity, _extendedprice, _discount, _tax,
@@ -222,7 +347,7 @@ int main()
 			_orderkey = row[0].AsUInt32();
 			_partkey = row[1].AsUInt32();
 			_suppkey = row[2].AsUInt32();
-			_linenumber = row[3].AsFloat();
+			_linenumber = row[3].AsUInt32();
 			_quantity = row[4].AsFloat();
 			_extendedprice = row[5].AsFloat();
 			_discount = row[6].AsFloat();
@@ -249,10 +374,135 @@ int main()
 	cout<<"Reading ROW (Vector) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
 	cout<<"Reading ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
 
+	// READ A INT using VECTOR	
+	avg = 0;
+	avg2 = 0;
+	minN = 1000000;
+	maxN = 0;
+	for(int i=0;i<n2;i++) {
+		avg = 0;
+		gettimeofday(&start, NULL);
+		for(int i=0;i<n;i++) {
+			row= flexbuffers::GetRoot(buf2).AsVector();
+			_partkey = row[1].AsUInt32();
+		}
+		gettimeofday(&end, NULL);
+		
+		t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+		avg += t;
+		avg /= n;
+		minN = minN<avg?minN:avg;
+		maxN = maxN>avg?maxN:avg;
+		avg2 += avg;
+	}
+	avg2 /= n2;
+	std::cout<<"Reading INT (vector) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Reading INT: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+
+	// READ A FLOAT using MAP	
+	avg = 0;
+	avg2 = 0;
+	minN = 1000000;
+	maxN = 0;
+	for(int i=0;i<n2;i++) {
+		avg = 0;
+		gettimeofday(&start, NULL);
+		for(int i=0;i<n;i++) {
+			row = flexbuffers::GetRoot(buf2).AsVector();
+			_quantity = row[4].AsUInt32();
+		}
+		gettimeofday(&end, NULL);
+		
+		t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+		avg += t;
+		avg /= n;
+		minN = minN<avg?minN:avg;
+		maxN = maxN>avg?maxN:avg;
+		avg2 += avg;
+	}
+	avg2 /= n2;
+	std::cout<<"Reading FLOAT (vector) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Reading FLOAT: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+
+	// READ A BYTE using MAP	
+	avg = 0;
+	avg2 = 0;
+	minN = 1000000;
+	maxN = 0;
+	for(int i=0;i<n2;i++) {
+		avg = 0;
+		gettimeofday(&start, NULL);
+		for(int i=0;i<n;i++) {
+			row = flexbuffers::GetRoot(buf2).AsVector();
+			_linestatus = row[9].AsUInt32();
+		}
+		gettimeofday(&end, NULL);
+		
+		t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+		avg += t;
+		avg /= n;
+		minN = minN<avg?minN:avg;
+		maxN = maxN>avg?maxN:avg;
+		avg2 += avg;
+	}
+	avg2 /= n2;
+	std::cout<<"Reading BYTE (vector) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Reading BYTE: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+
+	// READ A DATE VEC using MAP	
+	avg = 0;
+	avg2 = 0;
+	minN = 1000000;
+	maxN = 0;
+	for(int i=0;i<n2;i++) {
+		avg = 0;
+		gettimeofday(&start, NULL);
+		for(int i=0;i<n;i++) {
+			row = flexbuffers::GetRoot(buf2).AsVector();
+			_shipdate = row[10].AsVector();
+		}
+		gettimeofday(&end, NULL);
+		
+		t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+		avg += t;
+		avg /= n;
+		minN = minN<avg?minN:avg;
+		maxN = maxN>avg?maxN:avg;
+		avg2 += avg;
+	}
+	avg2 /= n2;
+	std::cout<<"Reading VECTOR (vector) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Reading VECTOR: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+
+	// READ A String using MAP	
+	avg = 0;
+	avg2 = 0;
+	minN = 1000000;
+	maxN = 0;
+	for(int i=0;i<n2;i++) {
+		avg = 0;
+		gettimeofday(&start, NULL);
+		for(int i=0;i<n;i++) {
+			row = flexbuffers::GetRoot(buf2).AsVector();
+			_comment = row[15].AsString();
+		}
+		gettimeofday(&end, NULL);
+		
+		t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+		avg += t;
+		avg /= n;
+		minN = minN<avg?minN:avg;
+		maxN = maxN>avg?maxN:avg;
+		avg2 += avg;
+	}
+	avg2 /= n2;
+	cout<<"Reading String (vector) took "<< avg2<<" microseconds over "<<n<<" runs"<<endl;
+	cout<<"Reading String: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+
 	//	Check the number of fields of flexbuffer (map and vector)
-	int mSize = map.size();
-	int rSize = row.size();
-	cout<<"Map Size: "<<mSize<<" Vector Size: "<<rSize<<endl;
+	int mFields = map.size();
+	int rFields = row.size();
+	cout<<"Map Fields: "<<mFields<<" Vector Fields: "<<rFields<<endl;
 
 // -------------------------------------------------CHECK CONTENTS OF VECTOR FLEXBUFFER -----------------------------------
 	assertionCheck(orderkey, partkey, suppkey, linenumber, quantity, extendedprice, discount, tax, returnflag, linestatus, shipdate, receiptdate, commitdate,
