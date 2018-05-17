@@ -31,17 +31,17 @@ int main()
 	// Split by '|' deliminator
 	std::vector<std::string> parsedRow = split(line, '|');
 	
-// ------------------------------------------------------------------------Initialize FlatBuffer ----------------------------------------
+// ------------------------------------------------------------------------Initialize FlexBuffer ----------------------------------------
 	
 	//	 Creating temp variables to throw into the builder
 	int orderkey = atoi(parsedRow[0].c_str());
 	int partkey = atoi(parsedRow[1].c_str());
 	int suppkey = atoi(parsedRow[2].c_str());
 	int linenumber = atoi(parsedRow[3].c_str());
-	double quantity = stof(parsedRow[4]);
-	double extendedprice = stof(parsedRow[5]);
-	double discount = stof(parsedRow[6]);
-	double tax = stof(parsedRow[7]);
+	float quantity = stof(parsedRow[4]);
+	float extendedprice = stof(parsedRow[5]);
+	float discount = stof(parsedRow[6]);
+	float tax = stof(parsedRow[7]);
 	
 	int8_t returnflag = (int8_t) atoi(parsedRow[8].c_str());
 	int8_t linestatus = (int8_t) atoi(parsedRow[9].c_str());
@@ -122,11 +122,9 @@ int main()
 	});
 	fbb2.Finish();
 
-// --------------------------------------------Start Timing Rows--------------------------------------------------------------------
+// --------------------------------------------Initialize Temp Variables--------------------------------------------------------------------
 //
-	struct timeval start, end;
-	double t;
-
+	// Get Buffer pointers and check size of buffers
 	vector<uint8_t> buf = fbb.GetBuffer();
 	int size = fbb.GetSize();
 	cout<<"Buffer Size (map): "<<size<<endl;
@@ -134,14 +132,31 @@ int main()
 	int size2 = fbb2.GetSize();
 	cout<<"Buffer Size (vector): "<<size2<<endl<<endl;
 
+	// Initialize temp variables for assertions
+	flexbuffers::Builder temp;
+	temp.Vector([&]() {
+		temp.UInt(100);
+		temp.String("temp");
+	});
+	temp.Finish();
+	vector<uint8_t> tempbuf = temp.GetBuffer();
+	auto vec = flexbuffers::GetRoot(tempbuf).AsVector();
+
+	int _orderkey, _partkey, _suppkey, _linenumber;
+	float _quantity, _extendedprice, _discount, _tax;
+	int8_t _returnflag, _linestatus;
+	flexbuffers::Vector _shipdate = vec;
+	flexbuffers::Vector _commitdate = vec;
+	flexbuffers::Vector _receiptdate = vec;
+	flexbuffers::String _shipinstruct = vec[1].AsString();
+ 	flexbuffers::String _shipmode = vec[1].AsString();
+	flexbuffers::String _comment = vec[1].AsString();
+	
+	// -------------------------------------------------Start TIMING MAP FLEXBUFFER----------------------------------------------
+	struct timeval start, end;
+	double t;
+
 	auto map = flexbuffers::GetRoot(buf).AsMap();
-/*
-	auto _orderkey, _partkey, _suppkey, _linenumber;
-	auto _quantity, _extendedprice, _discount, _tax;
-	auto _returnflag, _linestatus;
-	auto  _shipdate, _commitdate, _receiptdate;
-	auto _shipinstruct, _shipmode, _comment;
-*/
 	double avg = 0;
 	double avg2 = 0;
 	int n = 1000000;
@@ -154,22 +169,22 @@ int main()
 		gettimeofday(&start, NULL);
 		for(int i=0;i<n;i++) {
 			map = flexbuffers::GetRoot(buf).AsMap();
-			auto _orderkey = map["orderkey"].AsUInt32();
-			auto _partkey = map["partkey"].AsUInt32();
-			auto _suppkey = map["suppkey"].AsUInt32();
-			auto _linenumber = map["linenumber"].AsFloat();
-			auto _quantity = map["quantity"].AsFloat();
-			auto _extendedprice = map["extendedprice"].AsFloat();
-			auto _discount = map["discount"].AsFloat();
-			auto _tax = map["tax"].AsFloat();
-			auto _returnflag = map["returnflag"].AsUInt8();
-			auto _linestatus = map["linestatus"].AsUInt8();
-			auto _shipdate = map["shipdate"].AsVector();
-			auto _commitdate = map["commitdate"].AsVector();
-			auto _receiptdate = map["receiptdate"].AsVector();
-			auto _shipinstruct = map["shipinstruct"].AsString();
-			auto _shipmode = map["shipmode"].AsString();
-			auto _comment = map["comment"].AsString();
+			_orderkey = map["orderkey"].AsUInt32();
+			_partkey = map["partkey"].AsUInt32();
+			_suppkey = map["suppkey"].AsUInt32();
+			_linenumber = map["linenumber"].AsFloat();
+			_quantity = map["quantity"].AsFloat();
+			_extendedprice = map["extendedprice"].AsFloat();
+			_discount = map["discount"].AsFloat();
+			_tax = map["tax"].AsFloat();
+			_returnflag = map["returnflag"].AsUInt8();
+			_linestatus = map["linestatus"].AsUInt8();
+			_shipdate = map["shipdate"].AsVector();
+			_receiptdate = map["receiptdate"].AsVector();
+			_commitdate = map["commitdate"].AsVector();
+			_shipinstruct = map["shipinstruct"].AsString();
+			_shipmode = map["shipmode"].AsString();
+			_comment = map["comment"].AsString();
 		}
 		gettimeofday(&end, NULL);
 		
@@ -183,7 +198,35 @@ int main()
 	avg2 /= n2;
 	std::cout<<"Reading ROW (map) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
 	cout<<"Reading ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
-		
+	
+	assert(_orderkey == orderkey);
+	assert(_partkey == partkey);
+	assert(_suppkey == suppkey);
+	assert(_linenumber == linenumber);
+	
+	assert(_quantity == quantity);
+	assert(_extendedprice == extendedprice);
+	assert(_discount == discount);
+	assert(_tax == tax);
+
+	assert(_returnflag == returnflag);
+	assert(_linestatus == linestatus);
+
+	assert(_shipdate[0].AsInt32() == shipdate[0]);
+	assert(_shipdate[1].AsInt32() == shipdate[1]);
+	assert(_shipdate[2].AsInt32() == shipdate[2]);
+	assert(_receiptdate[0].AsInt32() == receiptdate[0]);
+	assert(_receiptdate[1].AsInt32() == receiptdate[1]);
+	assert(_receiptdate[2].AsInt32() == receiptdate[2]);
+	assert(_commitdate[0].AsInt32() == commitdate[0]);
+	assert(_commitdate[1].AsInt32() == commitdate[1]);
+	assert(_commitdate[2].AsInt32() == commitdate[2]);
+
+	assert( strcmp( _shipinstruct.c_str(), shipinstruct.c_str() ) == 0);
+	assert( strcmp( _shipmode.c_str(), shipmode.c_str() ) == 0);
+	assert( strcmp( _comment.c_str(), comment.c_str() ) == 0);
+
+	// -------------------------------------------------- START TIMING VECTOR FLEXBUFFER--------------------------------
 	// READ A ROW using VECTOR
 	auto row = flexbuffers::GetRoot(buf2).AsVector();
 	avg = 0;
@@ -195,22 +238,22 @@ int main()
 		gettimeofday(&start, NULL);
 		for(int i=0;i<n;i++) {
 			row = flexbuffers::GetRoot(buf2).AsVector();
-			auto _orderkey = row[0].AsUInt32();
-			auto _partkey = row[1].AsUInt32();
-			auto _suppkey = row[2].AsUInt32();
-			auto _linenumber = row[3].AsFloat();
-			auto _quantity = row[4].AsFloat();
-			auto _extendedprice = row[5].AsFloat();
-			auto _discount = row[6].AsFloat();
-			auto _tax = row[7].AsFloat();
-			auto _returnflag = row[8].AsUInt8();
-			auto _linestatus = row[9].AsUInt8();
-			auto _shipdate = row[10].AsVector();
-			auto _commitdate = row[11].AsVector();
-			auto _receiptdate = row[12].AsVector();
-			auto _shipinstruct = row[13].AsString();
-			auto _shipmode = row[14].AsString();
-			auto _comment = row[15].AsString();
+			_orderkey = row[0].AsUInt32();
+			_partkey = row[1].AsUInt32();
+			_suppkey = row[2].AsUInt32();
+			_linenumber = row[3].AsFloat();
+			_quantity = row[4].AsFloat();
+			_extendedprice = row[5].AsFloat();
+			_discount = row[6].AsFloat();
+			_tax = row[7].AsFloat();
+			_returnflag = row[8].AsUInt8();
+			_linestatus = row[9].AsUInt8();
+			_shipdate = row[10].AsVector();
+			_receiptdate = row[11].AsVector();
+			_commitdate = row[12].AsVector();
+			_shipinstruct = row[13].AsString();
+			_shipmode = row[14].AsString();
+			_comment = row[15].AsString();
 		}
 		gettimeofday(&end, NULL);
 		
@@ -225,10 +268,11 @@ int main()
 	cout<<"Reading ROW (Vector) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
 	cout<<"Reading ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
 
+	//	Check the number of fields of flexbuffer (map and vector)
 	int mSize = map.size();
 	int rSize = row.size();
 	cout<<"Map Size: "<<mSize<<" Vector Size: "<<rSize<<endl;
-/*
+
 // ------------------------------------------------- DOUBLE CHECKING CONTENTS OF LINEITEM IN BUFFER -----------------------------------
 	assert(_orderkey == orderkey);
 	assert(_partkey == partkey);
@@ -242,7 +286,20 @@ int main()
 
 	assert(_returnflag == returnflag);
 	assert(_linestatus == linestatus);
-*/
+
+	assert(_shipdate[0].AsInt32() == shipdate[0]);
+	assert(_shipdate[1].AsInt32() == shipdate[1]);
+	assert(_shipdate[2].AsInt32() == shipdate[2]);
+	assert(_receiptdate[0].AsInt32() == receiptdate[0]);
+	assert(_receiptdate[1].AsInt32() == receiptdate[1]);
+	assert(_receiptdate[2].AsInt32() == receiptdate[2]);
+	assert(_commitdate[0].AsInt32() == commitdate[0]);
+	assert(_commitdate[1].AsInt32() == commitdate[1]);
+	assert(_commitdate[2].AsInt32() == commitdate[2]);
+
+	assert( strcmp( _shipinstruct.c_str(), shipinstruct.c_str() ) == 0);
+	assert( strcmp( _shipmode.c_str(), shipmode.c_str() ) == 0);
+	assert( strcmp( _comment.c_str(), comment.c_str() ) == 0);
 
 	return 0;
 }
