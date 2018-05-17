@@ -12,6 +12,9 @@ using namespace std;
 
 std::vector<std::string> split(const std::string &s, char delim);
 std::vector<int> splitDate(const std::string &s);
+void assertionCheck(int, int, int, int, float, float, float, float, int8_t, int8_t, vector<int>, vector<int>, vector<int>, string, string, string,
+			int, int, int, int, float, float, float, float, int8_t, int8_t,
+				flexbuffers::Vector, flexbuffers::Vector, flexbuffers::Vector, flexbuffers::String, flexbuffers::String, flexbuffers::String);
 
 int main()
 {
@@ -123,7 +126,7 @@ int main()
 	fbb2.Finish();
 
 // --------------------------------------------Initialize Temp Variables--------------------------------------------------------------------
-//
+
 	// Get Buffer pointers and check size of buffers
 	vector<uint8_t> buf = fbb.GetBuffer();
 	int size = fbb.GetSize();
@@ -152,7 +155,7 @@ int main()
  	flexbuffers::String _shipmode = vec[1].AsString();
 	flexbuffers::String _comment = vec[1].AsString();
 	
-	// -------------------------------------------------Start TIMING MAP FLEXBUFFER----------------------------------------------
+// -------------------------------------------------Start TIMING MAP FLEXBUFFER----------------------------------------------
 	struct timeval start, end;
 	double t;
 
@@ -198,35 +201,13 @@ int main()
 	avg2 /= n2;
 	std::cout<<"Reading ROW (map) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
 	cout<<"Reading ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
-	
-	assert(_orderkey == orderkey);
-	assert(_partkey == partkey);
-	assert(_suppkey == suppkey);
-	assert(_linenumber == linenumber);
-	
-	assert(_quantity == quantity);
-	assert(_extendedprice == extendedprice);
-	assert(_discount == discount);
-	assert(_tax == tax);
 
-	assert(_returnflag == returnflag);
-	assert(_linestatus == linestatus);
+// -----------------------------------------CHECK CONTENTS OF MAP FLEXBUFFER----------------------------------	
+	assertionCheck(orderkey, partkey, suppkey, linenumber, quantity, extendedprice, discount, tax, returnflag, linestatus, shipdate, receiptdate, commitdate,
+			shipinstruct, shipmode, comment, _orderkey, _partkey, _suppkey, _linenumber, _quantity, _extendedprice, _discount, _tax,
+			_returnflag, _linestatus, _shipdate, _receiptdate, _commitdate, _shipinstruct, _shipmode, _comment);
 
-	assert(_shipdate[0].AsInt32() == shipdate[0]);
-	assert(_shipdate[1].AsInt32() == shipdate[1]);
-	assert(_shipdate[2].AsInt32() == shipdate[2]);
-	assert(_receiptdate[0].AsInt32() == receiptdate[0]);
-	assert(_receiptdate[1].AsInt32() == receiptdate[1]);
-	assert(_receiptdate[2].AsInt32() == receiptdate[2]);
-	assert(_commitdate[0].AsInt32() == commitdate[0]);
-	assert(_commitdate[1].AsInt32() == commitdate[1]);
-	assert(_commitdate[2].AsInt32() == commitdate[2]);
-
-	assert( strcmp( _shipinstruct.c_str(), shipinstruct.c_str() ) == 0);
-	assert( strcmp( _shipmode.c_str(), shipmode.c_str() ) == 0);
-	assert( strcmp( _comment.c_str(), comment.c_str() ) == 0);
-
-	// -------------------------------------------------- START TIMING VECTOR FLEXBUFFER--------------------------------
+// -------------------------------------------------- START TIMING VECTOR FLEXBUFFER--------------------------------
 	// READ A ROW using VECTOR
 	auto row = flexbuffers::GetRoot(buf2).AsVector();
 	avg = 0;
@@ -273,7 +254,38 @@ int main()
 	int rSize = row.size();
 	cout<<"Map Size: "<<mSize<<" Vector Size: "<<rSize<<endl;
 
-// ------------------------------------------------- DOUBLE CHECKING CONTENTS OF LINEITEM IN BUFFER -----------------------------------
+// -------------------------------------------------CHECK CONTENTS OF VECTOR FLEXBUFFER -----------------------------------
+	assertionCheck(orderkey, partkey, suppkey, linenumber, quantity, extendedprice, discount, tax, returnflag, linestatus, shipdate, receiptdate, commitdate,
+			shipinstruct, shipmode, comment, _orderkey, _partkey, _suppkey, _linenumber, _quantity, _extendedprice, _discount, _tax,
+			_returnflag, _linestatus, _shipdate, _receiptdate, _commitdate, _shipinstruct, _shipmode, _comment);
+	return 0;
+}
+// --------------------------------------------------------HELPER FUNCTIONS----------------------------------------------------------
+std::vector<std::string> split(const std::string &s, char delim) {
+	std::istringstream ss(s);
+	std::string item;
+	std::vector<std::string> tokens;
+	while( getline(ss, item, delim)) {
+		tokens.push_back(item);
+	}
+	return tokens;
+}
+std::vector<int> splitDate(const std::string &s) {
+	std::istringstream ss(s);
+	std::string item;
+	std::vector<int> tokens;
+	while( getline(ss, item, '-')) {
+		tokens.push_back(atoi(item.c_str()));
+	}
+	return tokens;
+}
+void assertionCheck(int orderkey, int partkey, int suppkey, int linenumber, float quantity, float extendedprice, float discount, float tax,
+			int8_t returnflag, int8_t linestatus, vector<int> shipdate, vector<int> receiptdate, vector<int> commitdate,
+			string shipinstruct, string shipmode, string comment,
+			int _orderkey, int _partkey, int _suppkey, int _linenumber, float _quantity, float _extendedprice, float _discount, float _tax,
+			int8_t _returnflag, int8_t _linestatus, flexbuffers::Vector _shipdate, flexbuffers::Vector _receiptdate, flexbuffers::Vector _commitdate,
+			flexbuffers::String _shipinstruct, flexbuffers::String _shipmode, flexbuffers::String _comment) {
+
 	assert(_orderkey == orderkey);
 	assert(_partkey == partkey);
 	assert(_suppkey == suppkey);
@@ -301,24 +313,4 @@ int main()
 	assert( strcmp( _shipmode.c_str(), shipmode.c_str() ) == 0);
 	assert( strcmp( _comment.c_str(), comment.c_str() ) == 0);
 
-	return 0;
-}
-// --------------------------------------------------------HELPER FUNCTIONS----------------------------------------------------------
-std::vector<std::string> split(const std::string &s, char delim) {
-	std::istringstream ss(s);
-	std::string item;
-	std::vector<std::string> tokens;
-	while( getline(ss, item, delim)) {
-		tokens.push_back(item);
-	}
-	return tokens;
-}
-std::vector<int> splitDate(const std::string &s) {
-	std::istringstream ss(s);
-	std::string item;
-	std::vector<int> tokens;
-	while( getline(ss, item, '-')) {
-		tokens.push_back(atoi(item.c_str()));
-	}
-	return tokens;
 }
