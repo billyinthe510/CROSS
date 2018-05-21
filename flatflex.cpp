@@ -94,6 +94,7 @@ int main()
 	fbb0.Finish();
 	// Get Pointer to FlexBuffer Row
 	vector<uint8_t> buff = fbb0.GetBuffer();
+cout<<"fb0 size: "<<fbb0.GetSize()<<endl;
 	// Serialize buffer into a FlatBuffer::Vector
 	auto fb0 = builder.CreateVector(buff);
 	// Create a Row from FlexBuffer and new ID
@@ -106,6 +107,7 @@ int main()
 	// Split by '|' deliminator
 	parsedRow = split(row, '|');
 	orderkey = atoi(parsedRow[0].c_str());
+orderkey = 55;
 	partkey = atoi(parsedRow[1].c_str());
 	suppkey = atoi(parsedRow[2].c_str());
 	linenumber = atoi(parsedRow[3].c_str());
@@ -154,18 +156,26 @@ int main()
 		fbb1.String(shipinstruct);
 		fbb1.String(shipmode);
 		fbb1.String(comment);
+		fbb1.UInt(12);
+		fbb1.UInt(55);
+		fbb1.UInt(55);
+		fbb1.UInt(55);
+		fbb1.UInt(55);
 	});
 	fbb1.Finish();
 	// Get Pointer to FlexBuffer Row
 	buff = fbb1.GetBuffer();
-	// Serialize buffer into a FlatBuffer::Vector
+	cout<<"fb1 size: "<<fbb1.GetSize()<<endl;
+	// Serialize buffer into a FlatBuffer::Vector increases buffer by 190 bytes
 	auto fb1 = builder.CreateVector(buff);
-	// Create a Row from FlexBuffer and new ID
-	auto row1 = CreateRows(builder, rowID++, fb1); 
-	// Push new row onto vector of rows
+	// Create a Row from FlexBuffer and new ID add 20 bytes
+	auto row1 = CreateRows(builder, 500, fb1); 
+	// Push new row onto vector of rows adds 4 bytes
 	rows_vector.push_back(row1);	
 //--------------------------------------------------------------Created 2 rows -------------------------------------
-	auto table = CreateTable(builder, rows_vector);
+	// Serializing vector of Rows adds 12 bytes
+	auto rows_vec = builder.CreateVector(rows_vector);
+	auto table = CreateTable(builder, rows_vec);
 	builder.Finish(table);
 
 	uint8_t *buf = builder.GetBufferPointer();
@@ -173,11 +183,13 @@ int main()
 	cout<<"Buffer Size: "<<size<<endl<<endl;
 
 	auto records = GetTable(buf);
-	flatbuffers::Vector<flatbuffers::Offset<Rows>> recs = records->data();
-	auto firstRow = flexbuffers::GetRoot(recs[0]).AsVector();
-	cout<<"First Row's Orderkey: "<<firstRow[0]<<endl;
-
-	auto record = flexbuffers::GetRoot(buff).AsUInt8();
+	const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = records->data();
+	auto firstRowPtr = recs[0].Get(1)->rows();
+	auto f = flexbuffers::GetRoot(ptr).AsVector();
+	auto firstFb = firstRowPtr->Length();
+	cout<<"First Row's Orderkey: "<<firstFb<<endl;
+	cout<<"Orderkey should be: "<<orderkey<<endl;
+//	auto record = flexbuffers::GetRoot(buff).AsUInt8();
 	
 /*
 // --------------------------------------------Start Timing Rows--------------------------------------------------------------------
