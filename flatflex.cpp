@@ -58,47 +58,47 @@ int main()
 	string shipmode = parsedRow[14];
 	string comment = parsedRow[15];
 
-	int rowID = 0;
+	int rowID = 500;
 // -----------------------------------------Create Row 0-------------------------------------------
-	flexbuffers::Builder fbb0;
-	fbb0.Vector([&]() {
-		fbb0.UInt(orderkey);
-		fbb0.UInt(partkey);
-		fbb0.UInt(suppkey);
-		fbb0.UInt(linenumber);
-		fbb0.Float(quantity);
-		fbb0.Float(extendedprice);
-		fbb0.Float(discount);
-		fbb0.Float(tax);
-		fbb0.UInt(returnflag);
-		fbb0.UInt(linestatus);
-		fbb0.Vector([&]() {
-			fbb0.UInt(shipdate[0]);
-			fbb0.UInt(shipdate[1]);
-			fbb0.UInt(shipdate[2]);
+	flexbuffers::Builder flx0;
+	flx0.Vector([&]() {
+		flx0.UInt(orderkey);
+		flx0.UInt(partkey);
+		flx0.UInt(suppkey);
+		flx0.UInt(linenumber);
+		flx0.Float(quantity);
+		flx0.Float(extendedprice);
+		flx0.Float(discount);
+		flx0.Float(tax);
+		flx0.UInt(returnflag);
+		flx0.UInt(linestatus);
+		flx0.Vector([&]() {
+			flx0.UInt(shipdate[0]);
+			flx0.UInt(shipdate[1]);
+			flx0.UInt(shipdate[2]);
 		});
-		fbb0.Vector([&]() {
-			fbb0.UInt(receiptdate[0]);
-			fbb0.UInt(receiptdate[1]);
-			fbb0.UInt(receiptdate[2]);
+		flx0.Vector([&]() {
+			flx0.UInt(receiptdate[0]);
+			flx0.UInt(receiptdate[1]);
+			flx0.UInt(receiptdate[2]);
 		});
-		fbb0.Vector([&]() {
-			fbb0.UInt(commitdate[0]);
-			fbb0.UInt(commitdate[1]);
-			fbb0.UInt(commitdate[2]);
+		flx0.Vector([&]() {
+			flx0.UInt(commitdate[0]);
+			flx0.UInt(commitdate[1]);
+			flx0.UInt(commitdate[2]);
 		});
-		fbb0.String(shipinstruct);
-		fbb0.String(shipmode);
-		fbb0.String(comment);
+		flx0.String(shipinstruct);
+		flx0.String(shipmode);
+		flx0.String(comment);
 	});
-	fbb0.Finish();
+	flx0.Finish();
 	// Get Pointer to FlexBuffer Row
-	vector<uint8_t> buff = fbb0.GetBuffer();
-cout<<"fb0 size: "<<fbb0.GetSize()<<endl;
+	vector<uint8_t> flxPtr = flx0.GetBuffer();
+cout<<"fb0 size: "<<flx0.GetSize()<<endl;
 	// Serialize buffer into a FlatBuffer::Vector
-	auto fb0 = builder.CreateVector(buff);
+	auto flxSerial = builder.CreateVector(flxPtr);
 	// Create a Row from FlexBuffer and new ID
-	auto row0 = CreateRows(builder, rowID++, fb0); 
+	auto row0 = CreateRows(builder, rowID++, flxSerial); 
 	// Push new row onto vector of rows
 	rows_vector.push_back(row0);	
 // --------------------------------------------------Create Row 1-------------------------------------------------
@@ -126,50 +126,45 @@ orderkey = 55;
 	shipmode = parsedRow[14];
 	comment = parsedRow[15];
 
-	flexbuffers::Builder fbb1;
-	fbb1.Vector([&]() {
-		fbb1.UInt(orderkey);
-		fbb1.UInt(partkey);
-		fbb1.UInt(suppkey);
-		fbb1.UInt(linenumber);
-		fbb1.Float(quantity);
-		fbb1.Float(extendedprice);
-		fbb1.Float(discount);
-		fbb1.Float(tax);
-		fbb1.UInt(returnflag);
-		fbb1.UInt(linestatus);
-		fbb1.Vector([&]() {
-			fbb1.UInt(shipdate[0]);
-			fbb1.UInt(shipdate[1]);
-			fbb1.UInt(shipdate[2]);
+	flexbuffers::Builder flx1;
+	flx1.Vector([&]() {
+		flx1.UInt(orderkey);
+		flx1.UInt(partkey);
+		flx1.UInt(suppkey);
+		flx1.UInt(linenumber);
+		flx1.Float(quantity);
+		flx1.Float(extendedprice);
+		flx1.Float(discount);
+		flx1.Float(tax);
+		flx1.UInt(returnflag);
+		flx1.UInt(linestatus);
+		flx1.Vector([&]() {
+			flx1.UInt(shipdate[0]);
+			flx1.UInt(shipdate[1]);
+			flx1.UInt(shipdate[2]);
 		});
-		fbb1.Vector([&]() {
-			fbb1.UInt(receiptdate[0]);
-			fbb1.UInt(receiptdate[1]);
-			fbb1.UInt(receiptdate[2]);
+		flx1.Vector([&]() {
+			flx1.UInt(receiptdate[0]);
+			flx1.UInt(receiptdate[1]);
+			flx1.UInt(receiptdate[2]);
 		});
-		fbb1.Vector([&]() {
-			fbb1.UInt(commitdate[0]);
-			fbb1.UInt(commitdate[1]);
-			fbb1.UInt(commitdate[2]);
+		flx1.Vector([&]() {
+			flx1.UInt(commitdate[0]);
+			flx1.UInt(commitdate[1]);
+			flx1.UInt(commitdate[2]);
 		});
-		fbb1.String(shipinstruct);
-		fbb1.String(shipmode);
-		fbb1.String(comment);
-		fbb1.UInt(12);
-		fbb1.UInt(55);
-		fbb1.UInt(55);
-		fbb1.UInt(55);
-		fbb1.UInt(55);
+		flx1.String(shipinstruct);
+		flx1.String(shipmode);
+		flx1.String(comment);
 	});
-	fbb1.Finish();
-	// Get Pointer to FlexBuffer Row
-	buff = fbb1.GetBuffer();
-	cout<<"fb1 size: "<<fbb1.GetSize()<<endl;
+	flx1.Finish();
+	// Get Pointer to FlexBuffer Row -- vector<uint8_t>
+	flxPtr = flx1.GetBuffer();
+	cout<<"fb1 size: "<<flx1.GetSize()<<endl;
 	// Serialize buffer into a FlatBuffer::Vector increases buffer by 190 bytes
-	auto fb1 = builder.CreateVector(buff);
+	flxSerial = builder.CreateVector(flxPtr);
 	// Create a Row from FlexBuffer and new ID add 20 bytes
-	auto row1 = CreateRows(builder, 500, fb1); 
+	auto row1 = CreateRows(builder, rowID++, flxSerial); 
 	// Push new row onto vector of rows adds 4 bytes
 	rows_vector.push_back(row1);	
 //--------------------------------------------------------------Created 2 rows -------------------------------------
@@ -182,12 +177,23 @@ orderkey = 55;
 	int size = builder.GetSize();
 	cout<<"Buffer Size: "<<size<<endl<<endl;
 
+	int rowNum = 1;
+
 	auto records = GetTable(buf);
 	const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = records->data();
-	auto firstRowPtr = recs[0].Get(1)->rows();
-	auto f = flexbuffers::GetRoot(ptr).AsVector();
-	auto firstFb = firstRowPtr->Length();
-	cout<<"First Row's Orderkey: "<<firstFb<<endl;
+	auto rowPtr = recs->Get(rowNum)->rows();
+	int recsSize = recs->size();
+	cout<<"Recs Size: "<<recsSize<<endl;
+
+	auto f = recs->Get(rowNum)->rows_flexbuffer_root();
+	auto rowVector = f.AsVector();
+	auto rowOrderKey = rowVector[0].AsUInt32();
+	cout<<"Row's Order Key: "<<rowOrderKey<<endl;
+
+	auto rowLength = rowPtr->Length();
+	cout<<"Row "<<rowNum<<" Flexbuffer length: "<<rowLength<<endl;
+	cout<<"Row "<<rowNum<<" ID: "<<recs->Get(rowNum)->ID()<<endl;
+//	cout<<"First Row's Orderkey: "<<firstFb<<endl;
 	cout<<"Orderkey should be: "<<orderkey<<endl;
 //	auto record = flexbuffers::GetRoot(buff).AsUInt8();
 	

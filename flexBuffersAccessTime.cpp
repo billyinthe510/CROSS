@@ -399,7 +399,7 @@ int main()
 	std::cout<<"Reading INT (vector) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
 	cout<<"Reading INT: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
 
-	// READ A FLOAT using MAP	
+	// READ A FLOAT using VECTOR	
 	avg = 0;
 	avg2 = 0;
 	minN = 1000000;
@@ -424,7 +424,7 @@ int main()
 	std::cout<<"Reading FLOAT (vector) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
 	cout<<"Reading FLOAT: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
 
-	// READ A BYTE using MAP	
+	// READ A BYTE using VECTOR
 	avg = 0;
 	avg2 = 0;
 	minN = 1000000;
@@ -449,7 +449,7 @@ int main()
 	std::cout<<"Reading BYTE (vector) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
 	cout<<"Reading BYTE: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
 
-	// READ A DATE VEC using MAP	
+	// READ A DATE VEC using VECTOR	
 	avg = 0;
 	avg2 = 0;
 	minN = 1000000;
@@ -474,7 +474,7 @@ int main()
 	std::cout<<"Reading VECTOR (vector) took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
 	cout<<"Reading VECTOR: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
 
-	// READ A String using MAP	
+	// READ A String using VECTOR
 	avg = 0;
 	avg2 = 0;
 	minN = 1000000;
