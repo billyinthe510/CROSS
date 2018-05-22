@@ -14,6 +14,9 @@ using namespace Tables;
 
 std::vector<std::string> split(const std::string &s, char delim);
 std::vector<int> splitDate(const std::string &s);
+void assertionCheck(int, int, int, int, float, float, float, float, int8_t, int8_t, vector<int>, vector<int>, vector<int>, string, string, string,
+			int, int, int, int, float, float, float, float, int8_t, int8_t,
+				flexbuffers::Vector, flexbuffers::Vector, flexbuffers::Vector, flexbuffers::String, flexbuffers::String, flexbuffers::String);
 
 int main()
 {
@@ -29,11 +32,11 @@ int main()
 	// Get a row
 	std::string row;
 	std::getline(inFile, row);
-	//inFile.close();
+	inFile.close();
 	// Split by '|' deliminator
 	std::vector<std::string> parsedRow = split(row, '|');
 	
-// ------------------------------------------------------------------------Initialize FlatBuffer ----------------------------------------
+// -----------------------------------------------------Initialize FlatBuffer ----------------------------------------
 	//	 Create a 'FlatBufferBuilder', which will be used to create our LINEITEM FlexBuffers
 	flatbuffers::FlatBufferBuilder fbbuilder(1024);
 	vector<flatbuffers::Offset<Rows>> rows_vector;
@@ -59,7 +62,7 @@ int main()
 	string comment = parsedRow[15];
 
 	int rowID = 500;
-// -----------------------------------------Create Row 0-------------------------------------------
+// -----------------------------------------Create Row 0 FlexBuffer-------------------------------------------
 	flexbuffers::Builder flx0;
 	flx0.Vector([&]() {
 		flx0.UInt(orderkey);
@@ -94,7 +97,7 @@ int main()
 	flx0.Finish();
 	// Get Pointer to FlexBuffer Row
 	vector<uint8_t> flxPtr = flx0.GetBuffer();
-// --------------------------------------------------Create 4MB of FlexBuffers-------------------------------------------------
+// ---------------------------------------Create 4MB of FlexBuffers----------------------------------------
 	for(int i=0;i<20900;i++) {
 		// Serialize buffer into a Flatbuffer::Vector
 		auto flxSerial = fbbuilder.CreateVector(flxPtr);
@@ -103,13 +106,13 @@ int main()
 		// Push new row onto vector of rows
 		rows_vector.push_back(row0);
 	}
-//--------------------------------------------------------------Create FlatBuffer of FlexBuffers -------------------------------------
+//----------------------------------------Create FlatBuffer of FlexBuffers --------------------------------
 	// Serializing vector of Rows adds 12 bytes
 	auto rows_vec = fbbuilder.CreateVector(rows_vector);
 	auto table = CreateTable(fbbuilder, rows_vec);
 	fbbuilder.Finish(table);
 
-// --------------------------------------------Start Timing Rows--------------------------------------------------------------------
+// --------------------------------------------Start Timing Rows-------------------------------------------
 //
 	// Get Pointer to FlatBuffer
 	uint8_t *buf = fbbuilder.GetBufferPointer();
@@ -125,8 +128,8 @@ int main()
 	volatile float _quantity, _extendedprice, _discount, _tax;
 	volatile int8_t _returnflag, _linestatus;
 
-	// FlexBuffers Vectors and Strings need to be Initialized to dummy values
-	// 	No String() or Vector() constructors
+	// 	FlexBuffers Vectors and Strings need to be Initialized to dummy values
+	// 		No flexbuffers::String() or flexbuffers::Vector() constructors
 	auto tempflxRoot = records->data()->Get(0)->rows_flexbuffer_root().AsVector();
 	flexbuffers::Vector _shipdate = tempflxRoot[11].AsVector();
 	flexbuffers::Vector _receiptdate = tempflxRoot[11].AsVector();
@@ -166,8 +169,8 @@ int main()
 				_returnflag = rowVector[8].AsUInt8();
 				_linestatus = rowVector[9].AsUInt8();
 				_shipdate = rowVector[10].AsVector();
-				_commitdate = rowVector[11].AsVector();
-				_receiptdate = rowVector[12].AsVector();
+				_receiptdate = rowVector[11].AsVector();
+				_commitdate = rowVector[12].AsVector();
 				_shipinstruct = rowVector[13].AsString();
 				_shipmode = rowVector[14].AsString();
 				_comment = rowVector[15].AsString();
@@ -185,19 +188,12 @@ int main()
 	std::cout<<"Reading LINEITEM took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
 	cout<<"Reading ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
 
-// ------------------------------------------------- DOUBLE CHECKING CONTENTS OF LINEITEM IN BUFFER -----------------------------------
-	assert(_orderkey == orderkey);
-	assert(_partkey == partkey);
-	assert(_suppkey == suppkey);
-	assert(_linenumber == linenumber);
-	
-	assert(_quantity == quantity);
-	assert(_extendedprice == extendedprice);
-	assert(_discount == discount);
-	assert(_tax == tax);
-
-	assert(_returnflag == returnflag);
-	assert(_linestatus == linestatus);
+// ---------------------------- CHECKING CONTENTS OF LINEITEM IN BUFFER 
+// 				(this is only if all rows share the same data)
+//				Will compare the last FlexBuffer read with the last FlexBuffer written, or in this test, the first FlexBuffer
+	assertionCheck(orderkey, partkey, suppkey, linenumber, quantity, extendedprice, discount, tax, returnflag, linestatus, shipdate, receiptdate, commitdate,
+			shipinstruct, shipmode, comment, _orderkey, _partkey, _suppkey, _linenumber, _quantity, _extendedprice, _discount, _tax,
+			_returnflag, _linestatus, _shipdate, _receiptdate, _commitdate, _shipinstruct, _shipmode, _comment);
 
 	return 0;
 }
@@ -219,4 +215,39 @@ std::vector<int> splitDate(const std::string &s) {
 		tokens.push_back(atoi(item.c_str()));
 	}
 	return tokens;
+}
+void assertionCheck(int orderkey, int partkey, int suppkey, int linenumber, float quantity, float extendedprice, float discount, float tax,
+			int8_t returnflag, int8_t linestatus, vector<int> shipdate, vector<int> receiptdate, vector<int> commitdate,
+			string shipinstruct, string shipmode, string comment,
+			int _orderkey, int _partkey, int _suppkey, int _linenumber, float _quantity, float _extendedprice, float _discount, float _tax,
+			int8_t _returnflag, int8_t _linestatus, flexbuffers::Vector _shipdate, flexbuffers::Vector _receiptdate, flexbuffers::Vector _commitdate,
+			flexbuffers::String _shipinstruct, flexbuffers::String _shipmode, flexbuffers::String _comment) {
+
+	assert(_orderkey == orderkey);
+	assert(_partkey == partkey);
+	assert(_suppkey == suppkey);
+	assert(_linenumber == linenumber);
+	
+	assert(_quantity == quantity);
+	assert(_extendedprice == extendedprice);
+	assert(_discount == discount);
+	assert(_tax == tax);
+
+	assert(_returnflag == returnflag);
+	assert(_linestatus == linestatus);
+
+	assert(_shipdate[0].AsInt32() == shipdate[0]);
+	assert(_shipdate[1].AsInt32() == shipdate[1]);
+	assert(_shipdate[2].AsInt32() == shipdate[2]);
+	assert(_receiptdate[0].AsInt32() == receiptdate[0]);
+	assert(_receiptdate[1].AsInt32() == receiptdate[1]);
+	assert(_receiptdate[2].AsInt32() == receiptdate[2]);
+	assert(_commitdate[0].AsInt32() == commitdate[0]);
+	assert(_commitdate[1].AsInt32() == commitdate[1]);
+	assert(_commitdate[2].AsInt32() == commitdate[2]);
+
+	assert( strcmp( _shipinstruct.c_str(), shipinstruct.c_str() ) == 0);
+	assert( strcmp( _shipmode.c_str(), shipmode.c_str() ) == 0);
+	assert( strcmp( _comment.c_str(), comment.c_str() ) == 0);
+
 }
