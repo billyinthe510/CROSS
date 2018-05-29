@@ -101,7 +101,7 @@ struct Row FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
     VT_L_EXTENDEDPRICE = 14,
     VT_L_DISCOUNT = 16,
     VT_L_TAX = 18,
-    VT_L_RETURNFLAT = 20,
+    VT_L_RETURNFLAG = 20,
     VT_L_LINESTATUS = 22,
     VT_L_SHIPDATE = 24,
     VT_L_RECEIPTDATE = 26,
@@ -134,8 +134,8 @@ struct Row FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   float L_TAX() const {
     return GetField<float>(VT_L_TAX, 0.0f);
   }
-  int32_t L_RETURNFLAT() const {
-    return GetField<int32_t>(VT_L_RETURNFLAT, 0);
+  int32_t L_RETURNFLAG() const {
+    return GetField<int32_t>(VT_L_RETURNFLAG, 0);
   }
   int32_t L_LINESTATUS() const {
     return GetField<int32_t>(VT_L_LINESTATUS, 0);
@@ -168,7 +168,7 @@ struct Row FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            VerifyField<float>(verifier, VT_L_EXTENDEDPRICE) &&
            VerifyField<float>(verifier, VT_L_DISCOUNT) &&
            VerifyField<float>(verifier, VT_L_TAX) &&
-           VerifyField<int32_t>(verifier, VT_L_RETURNFLAT) &&
+           VerifyField<int32_t>(verifier, VT_L_RETURNFLAG) &&
            VerifyField<int32_t>(verifier, VT_L_LINESTATUS) &&
            VerifyField<Date>(verifier, VT_L_SHIPDATE) &&
            VerifyField<Date>(verifier, VT_L_RECEIPTDATE) &&
@@ -210,8 +210,8 @@ struct RowBuilder {
   void add_L_TAX(float L_TAX) {
     fbb_.AddElement<float>(Row::VT_L_TAX, L_TAX, 0.0f);
   }
-  void add_L_RETURNFLAT(int32_t L_RETURNFLAT) {
-    fbb_.AddElement<int32_t>(Row::VT_L_RETURNFLAT, L_RETURNFLAT, 0);
+  void add_L_RETURNFLAG(int32_t L_RETURNFLAG) {
+    fbb_.AddElement<int32_t>(Row::VT_L_RETURNFLAG, L_RETURNFLAG, 0);
   }
   void add_L_LINESTATUS(int32_t L_LINESTATUS) {
     fbb_.AddElement<int32_t>(Row::VT_L_LINESTATUS, L_LINESTATUS, 0);
@@ -256,7 +256,7 @@ inline flatbuffers::Offset<Row> CreateRow(
     float L_EXTENDEDPRICE = 0.0f,
     float L_DISCOUNT = 0.0f,
     float L_TAX = 0.0f,
-    int32_t L_RETURNFLAT = 0,
+    int32_t L_RETURNFLAG = 0,
     int32_t L_LINESTATUS = 0,
     const Date *L_SHIPDATE = 0,
     const Date *L_RECEIPTDATE = 0,
@@ -272,7 +272,7 @@ inline flatbuffers::Offset<Row> CreateRow(
   builder_.add_L_RECEIPTDATE(L_RECEIPTDATE);
   builder_.add_L_SHIPDATE(L_SHIPDATE);
   builder_.add_L_LINESTATUS(L_LINESTATUS);
-  builder_.add_L_RETURNFLAT(L_RETURNFLAT);
+  builder_.add_L_RETURNFLAG(L_RETURNFLAG);
   builder_.add_L_TAX(L_TAX);
   builder_.add_L_DISCOUNT(L_DISCOUNT);
   builder_.add_L_EXTENDEDPRICE(L_EXTENDEDPRICE);
@@ -294,7 +294,7 @@ inline flatbuffers::Offset<Row> CreateRowDirect(
     float L_EXTENDEDPRICE = 0.0f,
     float L_DISCOUNT = 0.0f,
     float L_TAX = 0.0f,
-    int32_t L_RETURNFLAT = 0,
+    int32_t L_RETURNFLAG = 0,
     int32_t L_LINESTATUS = 0,
     const Date *L_SHIPDATE = 0,
     const Date *L_RECEIPTDATE = 0,
@@ -312,7 +312,7 @@ inline flatbuffers::Offset<Row> CreateRowDirect(
       L_EXTENDEDPRICE,
       L_DISCOUNT,
       L_TAX,
-      L_RETURNFLAT,
+      L_RETURNFLAG,
       L_LINESTATUS,
       L_SHIPDATE,
       L_RECEIPTDATE,

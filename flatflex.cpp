@@ -97,8 +97,10 @@ int main()
 	flx0.Finish();
 	// Get Pointer to FlexBuffer Row
 	vector<uint8_t> flxPtr = flx0.GetBuffer();
+	int flxSize = flx0.GetSize();
+	cout<<"FlexBuffer Size: "<<flxSize<<" bytes"<<endl;
 // ---------------------------------------Create 4MB of FlexBuffers----------------------------------------
-	for(int i=0;i<20900;i++) {
+	for(int i=0;i<1;i++) {
 		// Serialize buffer into a Flatbuffer::Vector
 		auto flxSerial = fbbuilder.CreateVector(flxPtr);
 		// Create a Row from FlexBuffer and new ID
@@ -117,11 +119,11 @@ int main()
 	// Get Pointer to FlatBuffer
 	uint8_t *buf = fbbuilder.GetBufferPointer();
 	int size = fbbuilder.GetSize();
-	cout<<"Buffer Size (FlatBuffer): "<<size<<endl;
+	cout<<"Buffer Size (FlatBuffer of FlexBuffers): "<<size<<" bytes"<<endl;
 	// Check number of FlexBuffers in FlatBuffer
 	volatile auto records = GetTable(buf);
 	int recsCount = records->data()->size();
-	cout<<"Recs Count: "<<recsCount<<endl;
+	cout<<"Row Count: "<<recsCount<<endl;
 	cout<<"Overhead for "<<recsCount<<" rows: "<<(size - (recsCount*flx0.GetSize()) ) / (double)recsCount<<" bytes per row"<<endl<<endl;
 	// Initialize temporary variables to store FlexBuffer data
 	volatile int32_t _orderkey, _partkey, _suppkey, _linenumber;
@@ -139,7 +141,7 @@ int main()
 	flexbuffers::String _comment = tempflxRoot[15].AsString();
 
 	// Setup the Timing test
-	int rowNum = 20315;
+	int rowNum = 0;
 	struct timeval start, end;
 	double t;
 
@@ -153,7 +155,7 @@ int main()
 		for(int i=0;i<n2;i++) {
 			avg = 0;
 			gettimeofday(&start, NULL);
-			for(int i=0;i<n;i++) {
+			for(int j=0;j<n;j++) {
 				records = GetTable(buf);
 				const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = records->data();
 				auto flxRoot = recs->Get(rowNum)->rows_flexbuffer_root();

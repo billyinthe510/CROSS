@@ -37,10 +37,9 @@ int main()
 	flatbuffers::FlatBufferBuilder fbb;
 	vector<flatbuffers::Offset<Row>> rows;
 	rows.reserve(VECTOR_SIZE);
-	for(int i=0; i<VECTOR_SIZE;i++) {
 
 	//	 Creating temp variables to throw into the builder
-	int orderkey = atoi(parsedRow[0].c_str());
+	int orderkey = 500 + atoi(parsedRow[0].c_str());
 	int partkey = atoi(parsedRow[1].c_str());
 	int suppkey = atoi(parsedRow[2].c_str());
 	int linenumber = atoi(parsedRow[3].c_str());
@@ -48,7 +47,7 @@ int main()
 	float extendedprice = stof(parsedRow[5]);
 	float discount = stof(parsedRow[6]);
 	float tax = stof(parsedRow[7]);
-	
+		
 	int8_t returnflag = (int8_t) atoi(parsedRow[8].c_str());
 	int8_t linestatus = (int8_t) atoi(parsedRow[9].c_str());
 	//	 Parsing and Serializing of Date fields	
@@ -63,40 +62,48 @@ int main()
 	auto shipinstruct = fbb.CreateString(parsedRow[13]);
 	auto shipmode = fbb.CreateString(parsedRow[14]);
 	auto comment = fbb.CreateString(parsedRow[15]);
-
-	RowBuilder rb(fbb);
-	rb.add_L_ORDERKEY(orderkey);
-	rb.add_L_PARTKEY(partkey);
-	rb.add_L_SUPPKEY(suppkey);
-	rb.add_L_LINENUMBER(linenumber);
-	rb.add_L_QUANTITY(quantity);
-	rb.add_L_EXTENDEDPRICE(extendedprice);
-	rb.add_L_DISCOUNT(discount);
-	rb.add_L_TAX(tax);
-	rb.add_L_RETURNFLAG(returnflag);
-	rb.add_L_LINESTATUS(linestatus);
-	rb.add_L_SHIPDATE(shipdate);
-	rb.add_L_RECEIPTDATE(receiptdate);
-	rb.add_L_COMMITDATE(commitdate);
-	rb.add_L_SHIPINSTRUCT(shipinstruct);
-	rb.add_L_SHIPMODE(shipmode);
+	// Populate the Rows Vector
+	for(int i=0; i<VECTOR_SIZE;i++) {	
+		// Serialize String fields  into each row
+		// Can only create one object at a time 
+		// (so serialize before making a new Row)
+		shipinstruct = fbb.CreateString(parsedRow[13]);
+		shipmode = fbb.CreateString(parsedRow[14]);
+		comment = fbb.CreateString(parsedRow[15]);
+		
+		RowBuilder rb(fbb);
+		rb.add_L_ORDERKEY(orderkey++);
+		rb.add_L_PARTKEY(partkey);
+		rb.add_L_SUPPKEY(suppkey);
+		rb.add_L_LINENUMBER(linenumber);
+		rb.add_L_QUANTITY(quantity);
+		rb.add_L_EXTENDEDPRICE(extendedprice);
+		rb.add_L_DISCOUNT(discount);
+		rb.add_L_TAX(tax);
+		rb.add_L_RETURNFLAG(returnflag);
+		rb.add_L_LINESTATUS(linestatus);
+		rb.add_L_SHIPDATE(&shipdate);
+		rb.add_L_RECEIPTDATE(&receiptdate);
+		rb.add_L_COMMITDATE(&commitdate);
+		rb.add_L_SHIPINSTRUCT(shipinstruct);
+		rb.add_L_SHIPMODE(shipmode);
+		rb.add_L_COMMENT(comment);
 	
-	rows.push_back(rb.Finish());
+		rows.push_back(rb.Finish());
 	}
 	FinishTableBuffer(fbb, CreateTable(fbb, fbb.CreateVector(rows)));
-//	auto bb = fbb.ReleaseBufferPointer();
-//	auto table = GetTable(bb.get());
 
 // --------------------------------------------Start Timing Rows--------------------------------------------------------------------
 //
 	struct timeval start, end;
 	double t;
 
+	int rowNum = 2;
 	uint8_t *buf = fbb.GetBufferPointer();
 	int size = fbb.GetSize();
-	std::cout<<"Buffer Size (FlatBuffer): "<<size<<endl<<endl;
-
-	auto table = GetTable(buf);
+	cout<<"Buffer Size (FlatBuffer): "<<size<<endl<<endl;
+	auto tempRow = GetTable(buf)->rows()->Get(rowNum);
+	cout<<"Row "<<rowNum<<"'s Orderkey is: "<<tempRow->L_ORDERKEY()<<endl;	
 	volatile int32_t _orderkey, _partkey, _suppkey, _linenumber;
 	volatile float _quantity, _extendedprice, _discount, _tax;
 	volatile int8_t _returnflag, _linestatus;
@@ -110,55 +117,40 @@ int main()
 	double minN = 1000000;
 	double maxN = 0;
 	// READ A ROW
-		for(int i=0;i<n2;i++) {
-			avg = 0;
-			gettimeofday(&start, NULL);
-			for(int i=0;i<n;i++) {
-				auto item = *table->rows()->Get(0);
-				_orderkey = item->L_ORDERKEY();
-				_partkey = item->L_PARTKEY();
-				_suppkey = item->L_SUPPKEY();
-				_linenumber = item->L_LINENUMBER();
-				_quantity = item->L_QUANTITY();
-				_extendedprice = item->L_EXTENDEDPRICE();
-				_discount = item->L_DISCOUNT();
-				_tax = item->L_TAX();
-				_returnflag = item->L_RETURNFLAG();
-				_linestatus = item->L_LINESTATUS();
-				_shipdate = item->L_SHIPDATE();
-				_commitdate = item->L_COMMITDATE();
-				_receiptdate = item->L_RECEIPTDATE();
-				_shipinstruct = item->L_SHIPINSTRUCT();
-				_shipmode = item->L_SHIPMODE();
-				_comment = item->L_COMMENT();
-			}
-			gettimeofday(&end, NULL);
-			
-			t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
-			avg += t;
-			avg /= n;
-			minN = minN<avg?minN:avg;
-			maxN = maxN>avg?maxN:avg;
-			avg2 += avg;
+	for(int i=0;i<n2;i++) {
+		avg = 0;
+		gettimeofday(&start, NULL);
+		for(int i=0;i<n;i++) {
+			tempRow = GetTable(buf)->rows()->Get(rowNum);
+			_orderkey = tempRow->L_ORDERKEY();
+			_partkey = tempRow->L_PARTKEY();
+			_suppkey = tempRow->L_SUPPKEY();
+			_linenumber = tempRow->L_LINENUMBER();
+			_quantity = tempRow->L_QUANTITY();
+			_extendedprice = tempRow->L_EXTENDEDPRICE();
+			_discount = tempRow->L_DISCOUNT();
+			_tax = tempRow->L_TAX();
+			_returnflag = tempRow->L_RETURNFLAG();
+			_linestatus = tempRow->L_LINESTATUS();
+			_shipdate = tempRow->L_SHIPDATE();
+			_commitdate = tempRow->L_COMMITDATE();
+			_receiptdate = tempRow->L_RECEIPTDATE();
+			_shipinstruct = tempRow->L_SHIPINSTRUCT();
+			_shipmode = tempRow->L_SHIPMODE();
+			_comment = tempRow->L_COMMENT();
 		}
-		avg2 /= n2;
+		gettimeofday(&end, NULL);
+			
+		t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
+		avg += t;
+		avg /= n;
+		minN = minN<avg?minN:avg;
+		maxN = maxN>avg?maxN:avg;
+		avg2 += avg;
+	}
+	avg2 /= n2;
 	std::cout<<"Reading LINEITEM took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
 	cout<<"Reading ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
-
-
-// ------------------------------------------------- DOUBLE CHECKING CONTENTS OF LINEITEM IN BUFFER -----------------------------------
-	assert(_orderkey == orderkey);
-	assert(_partkey == partkey);
-	assert(_suppkey == suppkey);
-	assert(_linenumber == linenumber);
-	
-	assert(_quantity == quantity);
-	assert(_extendedprice == extendedprice);
-	assert(_discount == discount);
-	assert(_tax == tax);
-
-	assert(_returnflag == returnflag);
-	assert(_linestatus == linestatus);
 
 
 	return 0;
