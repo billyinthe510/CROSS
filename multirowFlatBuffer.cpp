@@ -39,7 +39,7 @@ int main()
 	rows.reserve(VECTOR_SIZE);
 
 	//	 Creating temp variables to throw into the builder
-	int orderkey = 500 + atoi(parsedRow[0].c_str());
+	int orderkey = 499 + atoi(parsedRow[0].c_str());
 	int partkey = atoi(parsedRow[1].c_str());
 	int suppkey = atoi(parsedRow[2].c_str());
 	int linenumber = atoi(parsedRow[3].c_str());
@@ -98,12 +98,13 @@ int main()
 	struct timeval start, end;
 	double t;
 
-	int rowNum = 2;
+	int rowNum = 55;
 	uint8_t *buf = fbb.GetBufferPointer();
 	int size = fbb.GetSize();
 	cout<<"Buffer Size (FlatBuffer): "<<size<<endl<<endl;
 	auto tempRow = GetTable(buf)->rows()->Get(rowNum);
 	cout<<"Row "<<rowNum<<"'s Orderkey is: "<<tempRow->L_ORDERKEY()<<endl;	
+
 	volatile int32_t _orderkey, _partkey, _suppkey, _linenumber;
 	volatile float _quantity, _extendedprice, _discount, _tax;
 	volatile int8_t _returnflag, _linestatus;
@@ -149,7 +150,7 @@ int main()
 		avg2 += avg;
 	}
 	avg2 /= n2;
-	std::cout<<"Reading LINEITEM took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Reading LINEITEM took "<< avg2<< " microseconds over "<<n<<" runs"<<endl;
 	cout<<"Reading ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
 
 
