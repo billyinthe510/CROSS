@@ -7,7 +7,7 @@
 #include <sstream>
 #include <sys/time.h>
 #include "flatbuffers/flexbuffers.h"
-#include "flatflex_generated.h"
+#include "flatflexV2_generated.h"
 
 using namespace std;
 using namespace Tables;
@@ -100,7 +100,8 @@ int main()
 	int flxSize = flx0.GetSize();
 	cout<<"FlexBuffer Size: "<<flxSize<<" bytes"<<endl;
 // ---------------------------------------Create 4MB of FlexBuffers----------------------------------------
-	for(int i=0;i<20900;i++) {
+	int nRows = 20900;
+	for(int i=0;i<nRows;i++) {
 		// Serialize buffer into a Flatbuffer::Vector
 		auto flxSerial = fbbuilder.CreateVector(flxPtr);
 		// Create a Row from FlexBuffer and new ID
@@ -111,8 +112,9 @@ int main()
 //----------------------------------------Create FlatBuffer of FlexBuffers --------------------------------
 	// Serializing vector of Rows adds 12 bytes
 	auto rows_vec = fbbuilder.CreateVector(rows_vector);
-	auto table = CreateTable(fbbuilder, rows_vec);
-	fbbuilder.Finish(table);
+	int version = 1;
+	auto tableOffset = CreateTable(fbbuilder, version, rows_vec);
+	fbbuilder.Finish(tableOffset);
 
 // --------------------------------------------Start Timing Rows-------------------------------------------
 //
@@ -121,32 +123,34 @@ int main()
 	int size = fbbuilder.GetSize();
 	cout<<"Buffer Size (FlatBuffer of FlexBuffers): "<<size<<" bytes"<<endl;
 	// Check number of FlexBuffers in FlatBuffer
-	volatile auto records = GetTable(buf);
-	int recsCount = records->data()->size();
+	volatile auto table = GetMutableTable(buf);
+	int recsCount = table->data()->size();
 	cout<<"Row Count: "<<recsCount<<endl;
 
-	// Initialize temporary variables to store FlexBuffer data
+/*	// Initialize temporary variables to store FlexBuffer data
 	volatile int32_t _orderkey, _partkey, _suppkey, _linenumber;
 	volatile float _quantity, _extendedprice, _discount, _tax;
 	volatile int8_t _returnflag, _linestatus;
 	// 	FlexBuffers Vectors and Strings need to be Initialized to dummy values
 	// 		No flexbuffers::String() or flexbuffers::Vector() constructors
-	auto tempflxRoot = records->data()->Get(0)->rows_flexbuffer_root().AsVector();
+	auto tempflxRoot = table->data()->Get(0)->rows_flexbuffer_root().AsVector();
 	flexbuffers::Vector _shipdate = tempflxRoot[11].AsVector();
 	flexbuffers::Vector _receiptdate = tempflxRoot[11].AsVector();
 	flexbuffers::Vector _commitdate = tempflxRoot[11].AsVector();
 	flexbuffers::String _shipinstruct = tempflxRoot[15].AsString();;
 	flexbuffers::String _shipmode = tempflxRoot[15].AsString();
 	flexbuffers::String _comment = tempflxRoot[15].AsString();
+*/
+	volatile int32_t _partkey;	
 
 	// Setup the Timing test
-	int rowNum = 0;
+	int rowNum = 1;
 	struct timeval start, end;
 	double t;
 
 	double avg = 0;
 	double avg2 = 0;
-	int n = 1000000;
+	int n = 1000;
 	int n2 = 10;
 	double minN = 1000000;
 	double maxN = 0;
@@ -155,11 +159,14 @@ int main()
 			avg = 0;
 			gettimeofday(&start, NULL);
 			for(int j=0;j<n;j++) {
-				records = GetTable(buf);
-				const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = records->data();
-				auto flxRoot = recs->Get(rowNum)->rows_flexbuffer_root();
-				auto mutatedCheck = flxRoot.AsVector()[1].MutateUInt(555);
-				_partkey = flxRoot.AsVector()[1].AsUInt32();
+				for(int k=0;k<rowNum;k++) {
+					table = GetMutableTable(buf);
+					const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = table->data();
+					auto flxRoot = recs->Get(k)->rows_flexbuffer_root();
+					auto mutatedCheck = flxRoot.AsVector()[1].MutateUInt(556);
+					auto _version = table->version();
+					table->mutate_version(_version+1);		
+				}
 			}
 			gettimeofday(&end, NULL);
 			
@@ -171,11 +178,17 @@ int main()
 			avg2 += avg;
 		}
 		avg2 /= n2;
-	std::cout<<"Reading LINEITEM took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
-	cout<<"Reading ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
-	
+	std::cout<<"Updating "<<rowNum<<" rows took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Updating ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+
+	_partkey = GetTable(buf)->data()->Get( rowNum -1)->rows_flexbuffer_root().AsVector()[1].AsUInt32();
+//	auto __partkey = GetTable(buf)->data()->Get( rowNum )->rows_flexbuffer_root().AsVector()[1].AsUInt32();
 	cout<<"Partkey is: "<<partkey<<endl;
 	cout<<"Changed partkey is: "<<_partkey<<endl;
+	auto __version = table->version();
+	cout<<"Version of Table is Now: "<<__version<<endl;
+//	cout<<"Second partkey is: "<<__partkey<<endl;
+
 
 // ---------------------------- CHECKING CONTENTS OF LINEITEM IN BUFFER 
 // 				(this is only if all rows share the same data)
