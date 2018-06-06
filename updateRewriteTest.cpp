@@ -1,6 +1,15 @@
 // Written by Billy Lai
 // 5/30/18
-// Updating a LINEITEM field within a FlatBuffer of FlexBuffers
+// Updating a LINEITEM field within a FlatBuffer of FlexBuffers (Rewriting FlatBuffer)
+//
+// Timed:
+//	Read n FlexBuffer Rows
+//		Create new FlexBuffer with the values and updated value
+//		Throw into Rows Vector
+//	Read remaining Rows
+//		Throw into Rows Vector
+//	Serialize Rows Vector
+//	Create Table
 
 #include <iostream>
 #include <fstream>
@@ -125,7 +134,7 @@ int main()
 	// Check number of FlexBuffers in FlatBuffer
 	volatile auto table = GetTable(buf);
 	int recsCount = table->data()->size();
-	cout<<"Row Count: "<<recsCount<<endl;
+	cout<<"Row Count: "<<recsCount<<endl<<endl;
 
 	// Initialize temporary variables to store FlexBuffer data
 	volatile int32_t _orderkey, _partkey, _suppkey, _linenumber;
@@ -142,36 +151,43 @@ int main()
 	flexbuffers::String _comment = tempflxRoot[15].AsString();
 
 	// Setup the Timing test
-	int rowNum = nRows;
+	int rowNum = nRows*0.01; 	// Set rowNum to # of Rows to be Updated
+
 	struct timeval start, end;
 	double t;
 
 	double avg = 0;
 	double avg2 = 0;
 	int n = 10;
-	int n2 = 10;
+	int n2 = 3;
 	double minN = 1000000;
 	double maxN = 0;
-	// initialize temp values 
+	// initialize dummy values so that we can verify data in new FlatBuffer (_buf)
 	uint8_t *_buf = fbbuilder.GetBufferPointer();
 	int _size = 0;
-	auto _table = GetTable(buf);
+	flatbuffers::FlatBufferBuilder _fbbuilder(1024);
 
-	// Update COLUMN by Rewriting
+	// Update COLUMN by Rewriting FlatBuffer
 		for(int i=0;i<n2;i++) {
 			avg = 0;
+			auto _table = GetTable(buf);
+			int _rowID = 500;
+			int _version = 0;
+
 			gettimeofday(&start, NULL);
-			for(int j=0;j<n;j++) {	
-				flatbuffers::FlatBufferBuilder _fbbuilder(1024);
-				vector<flatbuffers::Offset<Rows>> _rows_vector;
-				int _rowID= 500;
-				int _version = 0;
+			for(int j=0;j<n;j++) {
+				vector<flatbuffers::Offset<Rows>> _rows_vector;	
 				// Get FlatBuffer Table
 				table = GetTable(buf);
+				// Get Current Table Version
+				_version = table->version();
+				// Get Vector of Rows
 				const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = table->data();
 				for(int k=0;k<rowNum;k++) {
 					// Get Row to UPDATE
 					auto flxRoot = recs->Get(k)->rows_flexbuffer_root();
+					// Get Row's rowID
+					_rowID = recs->Get(k)->ID();
 					// Get fields within FlexBuffer
 					auto flxVector = flxRoot.AsVector();
 					_orderkey = flxVector[0].AsUInt32();
@@ -228,92 +244,45 @@ int main()
 					vector<uint8_t> _flxPtr = flx.GetBuffer();
 					// Serialize buffer into a Flatbuffer::Vector
 					auto _flxSerial = _fbbuilder.CreateVector(_flxPtr);
-					// Create a Row from FlexBuffer and new ID
-					auto _row = CreateRows(_fbbuilder, _rowID++, _flxSerial);
+					// Create a Row from FlexBuffer and old ID
+					auto _row = CreateRows(_fbbuilder, _rowID, _flxSerial);
 					// Push new row onto vector of rows
 					_rows_vector.push_back(_row);
-					// Update Table Version for each Row Altered
-					_version++;
 				}
 				for(int l=rowNum; l<nRows; l++) {
+					// Get row's rowID
+					_rowID = recs->Get(l)->ID();
 					// Get unupdated rows to throw into new flatbuffer
-					auto flxRoot = recs->Get(l)->rows_flexbuffer_root();
-					// Get fields within FlexBuffer
-					auto flxVector = flxRoot.AsVector();
-					_orderkey = flxVector[0].AsUInt32();
-					_partkey = flxVector[1].AsUInt32();
-					_suppkey = flxVector[2].AsUInt32();
-					_linenumber = flxVector[3].AsUInt32();
-					_quantity = flxVector[4].AsFloat();	
-					_extendedprice = flxVector[5].AsFloat();
-					_discount = flxVector[6].AsFloat();
-					_tax = flxVector[7].AsFloat();
-					_returnflag = flxVector[8].AsUInt8();
-					_linestatus = flxVector[9].AsUInt8();
-					_shipdate = flxVector[10].AsVector();
-					_receiptdate = flxVector[11].AsVector();
-					_commitdate = flxVector[12].AsVector();
-					_shipinstruct = flxVector[13].AsString();
-					_shipmode = flxVector[14].AsString();
-					_comment = flxVector[15].AsString();
-
-					// Rewrite FlexBuffer row
-					flexbuffers::Builder flx;
-					flx.Vector([&]() {
-						flx.UInt(_orderkey);
-						flx.UInt(_partkey);
-						flx.UInt(_suppkey);
-						flx.UInt(_linenumber);
-						flx.Float(_quantity);
-						flx.Float(_extendedprice);
-						flx.Float(_discount);
-						flx.Float(_tax);
-						flx.UInt(_returnflag);
-						flx.UInt(_linestatus);
-						flx.Vector([&]() {
-							flx.UInt(_shipdate[0].AsUInt32());
-							flx.UInt(_shipdate[1].AsUInt32());
-							flx.UInt(_shipdate[2].AsUInt32());
-						});
-						flx.Vector([&]() {
-							flx.UInt(_receiptdate[0].AsUInt32());
-							flx.UInt(_receiptdate[1].AsUInt32());
-							flx.UInt(_receiptdate[2].AsUInt32());
-						});
-						flx.Vector([&]() {
-							flx.UInt(_commitdate[0].AsUInt32());
-							flx.UInt(_commitdate[1].AsUInt32());
-							flx.UInt(_commitdate[2].AsUInt32());
-						});
-						flx.String(_shipinstruct);
-						flx.String(_shipmode);
-						flx.String(_comment);
-					});
-					flx.Finish();
-					// Get Pointer to FlexBuffer Row
-					vector<uint8_t> _flxPtr = flx.GetBuffer();
+					auto flxRoot = recs->Get(l)->rows();
+					int flxRootSize = flxRoot->size();
+					// Memcpy FlexBuffer Row
+					void* _f = malloc(flxRootSize);
+					memcpy( (uint8_t *)_f, flxRoot, flxRootSize+sizeof(int));
+					// Cast Pointer To uint8_t and copy into vector
+					uint8_t * c = (uint8_t *)_f;
+					vector<uint8_t> _flxPtr(c+sizeof(int), c + flxRootSize+sizeof(int));
 					// Serialize buffer into a Flatbuffer::Vector
 					auto _flxSerial = _fbbuilder.CreateVector(_flxPtr);
-					// Create a Row from FlexBuffer and new ID
-					auto _row = CreateRows(_fbbuilder, _rowID++, _flxSerial);
+					// Create a Row from FlexBuffer and old ID
+					auto _row = CreateRows(_fbbuilder, _rowID, _flxSerial);
 					// Push new row onto vector of rows
 					_rows_vector.push_back(_row);
-					// Update Table Version for each Row Altered
-					_version++;
+					free(_f);
 				}
 				// Create the new FlatBuffer of FlexBuffers
 				auto _rows_vec = _fbbuilder.CreateVector(_rows_vector);
+				// Update Table Version for each Alter Table Add Column
+				_version++;
 				auto _tableOffset = CreateTable(_fbbuilder, _version, _rows_vec);
 				_fbbuilder.Finish(_tableOffset);
-				// Get Pointer to FlatBuffer
-				_buf = _fbbuilder.GetBufferPointer();
-				_size = _fbbuilder.GetSize();
-//	_table = GetTable(_buf);
-//	auto __version = _table->version();
-//	cout<<"Version of Table is Now: "<<__version<<endl;
 			}
 			gettimeofday(&end, NULL);
-			
+
+			// Reset _fbbuilder unless it's the last run
+			if(i != n2-1)	
+				_fbbuilder.Reset();
+	
+			// Calculate time measurements
 			t = (double) ((end.tv_sec * 1000000 + end.tv_usec) - (start.tv_sec * 1000000 + start.tv_usec));
 			avg += t;
 			avg /= n;
@@ -322,20 +291,28 @@ int main()
 			avg2 += avg;
 		}
 		avg2 /= n2;
-	cout<<"Updating(rewriting) "<<rowNum<<" rows took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
-	cout<<"Rewriting ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
-
+	cout<<"Updating(rewriting) "<<rowNum<<" rows took "<< avg2<< " microseconds over "<<n<<" runs"<<endl;
+	cout<<"Rewriting ROW: minUpdateTime- "<<minN<<" maxUpdateTime- "<<maxN<<endl<<endl;
+	
+	// Get Pointer to FlatBuffer
+	 _buf = _fbbuilder.GetBufferPointer();
+	_size = _fbbuilder.GetSize();
 	cout<<"New Buffer Size (FlatBuffer of FlexBuffers): "<<_size<<" bytes"<<endl;
-//	_partkey = GetTable(buf)->data()->Get( rowNum -1)->rows_flexbuffer_root().AsVector()[1].AsUInt32();
-//	auto __partkey = GetTable(buf)->data()->Get( rowNum )->rows_flexbuffer_root().AsVector()[1].AsUInt32();
 
+	// Sample code for data assertion of _buf provided below
+	 	auto __partkey = GetTable(_buf)->data()->Get( rowNum -1)->rows_flexbuffer_root().AsVector()[1].AsUInt32();
+	 	_partkey = GetTable(buf)->data()->Get( rowNum -1 )->rows_flexbuffer_root().AsVector()[1].AsUInt32();
+		cout<<"Row "<<rowNum-1<<"'s Updated Partkey: "<<__partkey<<"\t\tOld Partkey: "<<_partkey<<endl;
+	
 
-// ---------------------------- CHECKING CONTENTS OF LINEITEM IN BUFFER 
-// 				(this is only if all rows share the same data)
-//				Will compare the last FlexBuffer read with the last FlexBuffer written, or in this test, the first FlexBuffer
-//	assertionCheck(orderkey, partkey, suppkey, linenumber, quantity, extendedprice, discount, tax, returnflag, linestatus, shipdate, receiptdate, commitdate,
-///			shipinstruct, shipmode, comment, _orderkey, _partkey, _suppkey, _linenumber, _quantity, _extendedprice, _discount, _tax,
-//			_returnflag, _linestatus, _shipdate, _receiptdate, _commitdate, _shipinstruct, _shipmode, _comment);
+	/*
+	// ---------------------------- CHECKING CONTENTS OF LINEITEM IN BUFFER --------------------------------------------------------------------------
+	// 				(this is only if all rows share the same data)
+	//				Will compare the last FlexBuffer read with the last FlexBuffer written, or in this test, the first FlexBuffer
+		assertionCheck(orderkey, partkey, suppkey, linenumber, quantity, extendedprice, discount, tax, returnflag, linestatus, shipdate, receiptdate, commitdate,
+				shipinstruct, shipmode, comment, _orderkey, _partkey, _suppkey, _linenumber, _quantity, _extendedprice, _discount, _tax,
+				_returnflag, _linestatus, _shipdate, _receiptdate, _commitdate, _shipinstruct, _shipmode, _comment);
+	*/
 
 	return 0;
 }
