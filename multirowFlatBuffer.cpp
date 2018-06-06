@@ -63,7 +63,7 @@ int main()
 	auto shipmode = fbb.CreateString(parsedRow[14]);
 	auto comment = fbb.CreateString(parsedRow[15]);
 	// Populate the Rows Vector
-	for(int i=0; i<VECTOR_SIZE;i++) {	
+	for(int i=0; i<VECTOR_SIZE-5;i++) {	
 		// Serialize String fields  into each row
 		// Can only create one object at a time 
 		// (so serialize before making a new Row)
@@ -101,7 +101,9 @@ int main()
 	int rowNum = 55;
 	uint8_t *buf = fbb.GetBufferPointer();
 	int size = fbb.GetSize();
-	cout<<"Buffer Size (FlatBuffer): "<<size<<endl<<endl;
+	cout<<"Buffer Size (FlatBuffer): "<<size<<endl;
+	int nRows = GetTable(buf)->rows()->size();
+	cout<<"Number of Rows within FlatBuffer: "<<nRows<<endl<<endl;
 	auto tempRow = GetTable(buf)->rows()->Get(rowNum);
 	cout<<"Row "<<rowNum<<"'s Orderkey is: "<<tempRow->L_ORDERKEY()<<endl;	
 

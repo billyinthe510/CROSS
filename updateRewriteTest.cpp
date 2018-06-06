@@ -128,7 +128,7 @@ int main()
 	cout<<"Row Count: "<<recsCount<<endl;
 
 	// Initialize temporary variables to store FlexBuffer data
-	volatile int32_t _orderkey, _partkey, _suppkey, _linenumber, _newInt;
+	volatile int32_t _orderkey, _partkey, _suppkey, _linenumber;
 	volatile float _quantity, _extendedprice, _discount, _tax;
 	volatile int8_t _returnflag, _linestatus;
 	// 	FlexBuffers Vectors and Strings need to be Initialized to dummy values
@@ -157,7 +157,7 @@ int main()
 	int _size = 0;
 	auto _table = GetTable(buf);
 
-	// Add a COLUMN to ROW
+	// Update COLUMN by Rewriting
 		for(int i=0;i<n2;i++) {
 			avg = 0;
 			gettimeofday(&start, NULL);
@@ -170,7 +170,7 @@ int main()
 				table = GetTable(buf);
 				const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = table->data();
 				for(int k=0;k<rowNum;k++) {
-					// Get Row
+					// Get Row to UPDATE
 					auto flxRoot = recs->Get(k)->rows_flexbuffer_root();
 					// Get fields within FlexBuffer
 					auto flxVector = flxRoot.AsVector();
@@ -191,8 +191,72 @@ int main()
 					_shipmode = flxVector[14].AsString();
 					_comment = flxVector[15].AsString();
 
-					// Add and INT
-					_newInt = 5555;
+					// Rewrite FlexBuffer row
+					flexbuffers::Builder flx;
+					flx.Vector([&]() {
+						flx.UInt(_orderkey);
+						flx.UInt(5555);
+						flx.UInt(_suppkey);
+						flx.UInt(_linenumber);
+						flx.Float(_quantity);
+						flx.Float(_extendedprice);
+						flx.Float(_discount);
+						flx.Float(_tax);
+						flx.UInt(_returnflag);
+						flx.UInt(_linestatus);
+						flx.Vector([&]() {
+							flx.UInt(_shipdate[0].AsUInt32());
+							flx.UInt(_shipdate[1].AsUInt32());
+							flx.UInt(_shipdate[2].AsUInt32());
+						});
+						flx.Vector([&]() {
+							flx.UInt(_receiptdate[0].AsUInt32());
+							flx.UInt(_receiptdate[1].AsUInt32());
+							flx.UInt(_receiptdate[2].AsUInt32());
+						});
+						flx.Vector([&]() {
+							flx.UInt(_commitdate[0].AsUInt32());
+							flx.UInt(_commitdate[1].AsUInt32());
+							flx.UInt(_commitdate[2].AsUInt32());
+						});
+						flx.String(_shipinstruct);
+						flx.String(_shipmode);
+						flx.String(_comment);
+					});
+					flx.Finish();
+					// Get Pointer to FlexBuffer Row
+					vector<uint8_t> _flxPtr = flx.GetBuffer();
+					// Serialize buffer into a Flatbuffer::Vector
+					auto _flxSerial = _fbbuilder.CreateVector(_flxPtr);
+					// Create a Row from FlexBuffer and new ID
+					auto _row = CreateRows(_fbbuilder, _rowID++, _flxSerial);
+					// Push new row onto vector of rows
+					_rows_vector.push_back(_row);
+					// Update Table Version for each Row Altered
+					_version++;
+				}
+				for(int l=rowNum; l<nRows; l++) {
+					// Get unupdated rows to throw into new flatbuffer
+					auto flxRoot = recs->Get(l)->rows_flexbuffer_root();
+					// Get fields within FlexBuffer
+					auto flxVector = flxRoot.AsVector();
+					_orderkey = flxVector[0].AsUInt32();
+					_partkey = flxVector[1].AsUInt32();
+					_suppkey = flxVector[2].AsUInt32();
+					_linenumber = flxVector[3].AsUInt32();
+					_quantity = flxVector[4].AsFloat();	
+					_extendedprice = flxVector[5].AsFloat();
+					_discount = flxVector[6].AsFloat();
+					_tax = flxVector[7].AsFloat();
+					_returnflag = flxVector[8].AsUInt8();
+					_linestatus = flxVector[9].AsUInt8();
+					_shipdate = flxVector[10].AsVector();
+					_receiptdate = flxVector[11].AsVector();
+					_commitdate = flxVector[12].AsVector();
+					_shipinstruct = flxVector[13].AsString();
+					_shipmode = flxVector[14].AsString();
+					_comment = flxVector[15].AsString();
+
 					// Rewrite FlexBuffer row
 					flexbuffers::Builder flx;
 					flx.Vector([&]() {
@@ -224,7 +288,6 @@ int main()
 						flx.String(_shipinstruct);
 						flx.String(_shipmode);
 						flx.String(_comment);
-						flx.UInt(_newInt);
 					});
 					flx.Finish();
 					// Get Pointer to FlexBuffer Row
@@ -259,8 +322,8 @@ int main()
 			avg2 += avg;
 		}
 		avg2 /= n2;
-	cout<<"Adding a column to "<<rowNum<<" rows took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
-	cout<<"Altering ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+	cout<<"Updating(rewriting) "<<rowNum<<" rows took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Rewriting ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
 
 	cout<<"New Buffer Size (FlatBuffer of FlexBuffers): "<<_size<<" bytes"<<endl;
 //	_partkey = GetTable(buf)->data()->Get( rowNum -1)->rows_flexbuffer_root().AsVector()[1].AsUInt32();
