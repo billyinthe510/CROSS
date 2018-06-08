@@ -144,7 +144,7 @@ int main()
 	volatile int32_t _partkey;	
 
 	// Setup the Timing test
-	int rowNum = 1;
+	int rowNum = 0.01*nRows;
 	struct timeval start, end;
 	double t;
 
@@ -159,14 +159,14 @@ int main()
 			avg = 0;
 			gettimeofday(&start, NULL);
 			for(int j=0;j<n;j++) {
+				table = GetMutableTable(buf);
+				const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = table->data();
 				for(int k=0;k<rowNum;k++) {
-					table = GetMutableTable(buf);
-					const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = table->data();
 					auto flxRoot = recs->Get(k)->rows_flexbuffer_root();
 					auto mutatedCheck = flxRoot.AsVector()[1].MutateUInt(556);
-					auto _version = table->version();
-					table->mutate_version(_version+1);		
 				}
+				auto _version = table->version();
+				table->mutate_version(_version+1);
 			}
 			gettimeofday(&end, NULL);
 			
@@ -179,7 +179,7 @@ int main()
 		}
 		avg2 /= n2;
 	std::cout<<"Updating "<<rowNum<<" rows took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
-	cout<<"Updating ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+	cout<<"Updating ROW: minUpdateTime- "<<minN<<" maxUpdateTime- "<<maxN<<endl<<endl;
 
 	_partkey = GetTable(buf)->data()->Get( rowNum -1)->rows_flexbuffer_root().AsVector()[1].AsUInt32();
 //	auto __partkey = GetTable(buf)->data()->Get( rowNum )->rows_flexbuffer_root().AsVector()[1].AsUInt32();
