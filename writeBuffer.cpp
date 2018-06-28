@@ -1,6 +1,6 @@
 // Written by Billy Lai
 // 6/25/18
-// Updating a LINEITEM field within a FlatBuffer of FlexBuffers
+// Writing rows from files to Ceph
 
 #include <iostream>
 #include <fstream>
@@ -14,14 +14,15 @@ using namespace std;
 using namespace Tables;
 
 enum DataType {TypeInt = 1, TypeDouble, TypeChar, TypeDate, TypeString};
-typedef flatbuffers::FlatBufferBuilder FBB;
+typedef flatbuffers::FlatBufferBuilder fbBuilder;
+typedef flexbuffers::Builder flxBuilder;
 typedef vector<uint8_t> delete_vector;
-typedef vector<flatbuffers::Offset<rows> rows_vector;
+//typedef vector<flatbuffers::Offset<Rows> rows_vector;
 
 struct bucket_t {
-	FBB fb;
+	fbBuilder fb;
 //	delete_vector dead;
-	rows_vector vec;
+//	rows_vector vec;
 };
 
 std::vector<std::string> split(const std::string &s, char delim);
@@ -34,20 +35,23 @@ void promptFileName(ifstream&, string&);
 void promptVariables(uint32_t&, uint32_t&, uint32_t&);
 vector<int> getSchema(vector<string>&, string&);
 vector<string> getNextRow(ifstream& inFile);
+void getFlxBuffer(flexbuffers::Builder *, vector<string>, vector<int>);
 int findKeyIndexWithinSchema(string, string);
-uint32_t getOId(uint64_t, int);
+uint64_t hashCompositeKey(string, vector<string>, vector<string>);
+int32_t jumpConsistentHash(uint64_t, int32_t);
 
 int main()
 {
-	map<uint32_t, flatbuffers::FlatBufferBuilder> FBmap;
-	map<uint32_t, flatbuffers::FlatBufferBuilder>::iterator it;
-	FBB *fbb;
+	map<uint32_t, bucket_t> FBmap;
+	map<uint32_t, bucket_t>::iterator it;
+	fbBuilder *fbb;
 //	delete_vector *dead;
-	rows_vector *rows;
+//	rows_vector *rows;
 // ----------------------------------------------Open .csv File---------------------------------------------------
 	ifstream inFile;
 	string fileName = "";
-	promptFileName(inFile, fileName);
+//	promptFileName(inFile, fileName);
+	inFile.open("lineitem-10K-rows.tbl",ifstream::in);
 // ---------------------------------------------Prompt for Configurable Variables------------------------------------
 	string input = "";
 	uint32_t num_objs = 0;
@@ -55,15 +59,17 @@ int main()
 	uint32_t rows_flush = 0;
 	uint32_t rows_total = 0;
 
-	promptVariables(num_objs, rows_flush, rows_total);
+//	promptVariables(num_objs, rows_flush, rows_total);
+		num_objs = rows_flush = rows_total = 500;
 	num_buckets = num_objs;
-// -------------------------------------Read Schema File---------------------------------------
+// -------------------------------------Read Schema File-----------------------------------------------
 	string schemaFileName = "";
 	vector<string> compositeKey;
 	vector<int> schema = getSchema(compositeKey, schemaFileName); // returns vector of enum types
-// ------------------------------------Get Rows and Load into FB-------------------------------
+// -------------------------------------------Get Rows and Load into FB--------------------------------
 	vector<string> parsedRow = getNextRow(inFile);
 	int rowId = 500;
+/*
 	// Create Flexbuffer from Parsed Row and Schema
 	flexbuffers::Builder flx0;
 	flx0.Vector([&]() {
@@ -90,47 +96,41 @@ int main()
 			}
 		}
 	});
-	flx0.Finish();
+	flx0.Finish();*/
+	flxBuilder *flx0 = new flxBuilder();
+	getFlxBuffer(flx0, parsedRow, schema);
 	// Get pointer to FlexBuffer
-	vector<uint8_t> flxPtr = flx0.GetBuffer();
+	vector<uint8_t> flxPtr = flx0->GetBuffer();
+	cout<<"FlexBuff size: "<<flxPtr.size()<<endl;
+// ---------------------------------------------Hash Composite Key-------------------------------------------------
+	uint64_t hashKey = hashCompositeKey(schemaFileName, compositeKey, parsedRow);
+// --------------------------------------------Get Oid Using HashKey-----------------------------------------------
+	int32_t oid = jumpConsistentHash(hashKey, num_objs);
+	cout<<"OID :  "<<oid<<endl;
 
-	// Hash Composite Key
-	vector<int> keyIndexes;
-	for(int i=0; i<(int)compositeKey.size();i++) {
-		keyIndexes.push_back( findKeyIndexWithinSchema(schemaFileName, compositeKey[i]) );
-		cout<<keyIndexes[i]<<endl;
-	}
-
-	uint64_t hashKey=0, upper=0, lower=0;
-	upper = parsedRow[keyIndexes[0]];
-	hashKey = upper << 32;
-	if( keyIndexes.size() > 1)
-		lower = parsedRow[keyIndexes[1]];
-	hashKey = hashKey | lower;
-
-	uint32_t oid = getOid(hashKey, num_objs);
-
-	// Get FB and insert
-	bucket_t current_bucket;
+// -----------------------------------------Get FB and insert-----------------------------------------------
+/*	bucket_t *current_bucket;
 
 	it = FBmap.find(oid);
 	if(it != FBmap.end()) {
 		current_bucket = &(it->second);
 	}
 	else {
-		fbb = new FBB();
+		fbb = new fbBuilder();
 //		dead = new delete_vector();
-		rows= new rows_vector();
+//		rows= new rows_vector();
 //		bucket_t bucket(*fbb, *dead, *rows);
-		bucket_t bucket(*fbb, *rows);
+	//	bucket_t bucket(*fbb, *rows);
+		bucket_t bucket(*fbb);
 		pair<uint32_t, bucket_t > data(oid, bucket);
 		it = FBmap.insert(data);
 		current_bucket = &(FBmap.find(oid)->second);
 	}
-	fbb = &(current_bucket.fb);
+*/
+//	*fbb = current_bucket->fb;
 //	dead = &(current_bucket.dead);
-	rows = &(current_bucket.vec);
-	
+//	rows = &(current_bucket.vec);
+/*	
 	auto flxSerial = fbb->CreateVector(flxPtr);
 	auto row0 = CreateRows(*fbb, rowID++, flxSerial);
 	rows->push_back(row0);
@@ -147,14 +147,14 @@ int main()
 
 		fbb->Reset();
 	}
-
+*/
 
 // -----------------------------------------------------Initialize FlatBuffer ----------------------------------------
 	//	 Create a 'FlatBufferBuilder', which will be used to create our LINEITEM FlexBuffers
 //	flatbuffers::FlatBufferBuilder fbbuilder(1024);
 //	vector<flatbuffers::Offset<Rows>> rows_vector;
 
-i	// Get Pointer to FlexBuffer Row
+	// Get Pointer to FlexBuffer Row
 //	vector<uint8_t> flxPtr = flx0.GetBuffer();
 //	int flxSize = flx0.GetSize();
 //	cout<<"FlexBuffer Size: "<<flxSize<<" bytes"<<endl;
@@ -342,8 +342,9 @@ vector<int> getSchema(vector<string>& compositeKey, string& schemaFileName) {
 	vector<int> schema;
 
 	// Get Schema File
-	cout<<"Which file will we get the schema from? : ";
-	getline(cin, fileName);
+//	cout<<"Which file will we get the schema from? : ";
+//	getline(cin, fileName);
+	fileName = "lineitem_schema.txt";
 	schemaFile.open(fileName, std::ifstream::in);
 	while(!schemaFile || strcmp(fileName.c_str(),"q")==0 || strcmp(fileName.c_str(),"Q")==0 )
 	{
@@ -379,6 +380,34 @@ vector<string> getNextRow(ifstream& inFile) {
 	// Split by '|' deliminator
 	return split(row, '|');
 }
+void getFlxBuffer(flxBuilder *flx0, vector<string> parsedRow, vector<int> schema) {
+	// Create Flexbuffer from Parsed Row and Schema
+	flx0->Vector([&]() {
+		for(int i=0;i<(int)schema.size();i++) {
+			switch(schema[i]) {
+				case TypeInt:
+					flx0->Int( atoi(parsedRow[i].c_str()) );
+					break;
+				case TypeDouble:
+					flx0->Double( stod(parsedRow[i]) );
+					break;
+				case TypeChar:
+					flx0->Int( parsedRow[i][0] );
+					break;
+				case TypeDate:
+					flx0->String( parsedRow[i]);
+					break;
+				case TypeString:
+					flx0->String( parsedRow[i]);
+					break;
+				default:
+					flx0->String("EMPTY");
+					break;
+			}
+		}
+	});
+	flx0->Finish();
+}
 int findKeyIndexWithinSchema(string schemaFileName, string key) {
 	ifstream schemaFile;
 	schemaFile.open(schemaFileName, ifstream::in);
@@ -387,6 +416,10 @@ int findKeyIndexWithinSchema(string schemaFileName, string key) {
 
 	while( getline(schemaFile, line) ) {
 		vector<string> parsedData = split(line, ' ');
+		// Hardcoded to know schema file 
+		//	has 'name' field as 2nd column of schema file
+		//	and has 'field number' as 1st column of schema file
+		//	field number | name | data type | data type enum
 		if( strcmp(parsedData[1].c_str(), key.c_str()) == 0) {
 			schemaFile.close();
 			return atoi(parsedData[0].c_str());
@@ -396,6 +429,28 @@ int findKeyIndexWithinSchema(string schemaFileName, string key) {
 	schemaFile.close();
 	return -1;
 }
-uint32_t getOid(uint64_t hashKey, uint32_t num_objs) {
-	return (uint32_t) (hashKey % (uint64_t)num_objs);
+uint64_t hashCompositeKey(string schemaFileName, vector<string> compositeKey, vector<string> parsedRow) {
+	// Get the Index of Key/s from SchemaFile
+	vector<int> keyIndexes;
+	for(int i=0; i<(int)compositeKey.size();i++) {
+		keyIndexes.push_back( findKeyIndexWithinSchema(schemaFileName, compositeKey[i]) );
+	}
+	// Hash the Composite Key
+	uint64_t hashKey=0, upper=0, lower=0;
+	stringstream(parsedRow[keyIndexes[0]]) >> upper;
+	hashKey = upper << 32;
+	if( keyIndexes.size() > 1) {
+		stringstream(parsedRow[keyIndexes[1]]) >> lower;
+		hashKey = hashKey | lower;
+	}
+	return hashKey;
+}
+int32_t jumpConsistentHash(uint64_t key, int32_t num_buckets) {
+	int64_t b=-1, j=0;
+	while(j < num_buckets) {
+		b = j;
+		key = key * 286293355588894185ULL + 1;
+		j = (b+1) * (double(1LL << 31) / double((key>>33) + 1));
+	}
+	return b;
 }
