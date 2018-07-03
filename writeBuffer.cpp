@@ -6,7 +6,7 @@
 #include <fstream>
 #include <sstream>
 #include <map>
-#include <sys/time.h>
+#include <unistd.h>	// for getOpt
 #include "flatbuffers/flexbuffers.h"
 #include "flatflexV2_generated.h"
 
@@ -15,15 +15,17 @@ using namespace Tables;
 
 enum DataType {TypeInt = 1, TypeDouble, TypeChar, TypeDate, TypeString};
 typedef flatbuffers::FlatBufferBuilder fbBuilder;
+typedef flatbuffers::FlatBufferBuilder* fbb;
 typedef flexbuffers::Builder flxBuilder;
-typedef vector<uint8_t> delete_vector;
-//typedef vector<flatbuffers::Offset<Rows> rows_vector;
+//typedef vector<uint8_t> delete_vector;
+typedef vector<flatbuffers::Offset<Rows>> rows_vector;
 
-struct bucket_t {
-	fbBuilder fb;
+typedef struct {
+	int oid;
+	fbBuilder *fb;
 //	delete_vector dead;
-//	rows_vector vec;
-};
+	rows_vector *rowsv;
+} bucket_t;
 
 std::vector<std::string> split(const std::string &s, char delim);
 std::vector<int> splitDate(const std::string &s);
@@ -31,123 +33,135 @@ void assertionCheck(int, int, int, int, float, float, float, float, int8_t, int8
 			int, int, int, int, float, float, float, float, int8_t, int8_t,
 				flexbuffers::Vector, flexbuffers::Vector, flexbuffers::Vector, flexbuffers::String, flexbuffers::String, flexbuffers::String);
 
-void promptFileName(ifstream&, string&);
-void promptVariables(uint32_t&, uint32_t&, uint32_t&);
+void promptDataFile(ifstream&, string&);
 vector<int> getSchema(vector<string>&, string&);
+uint32_t promptIntVariable(string, string);
+
+void promptVariables(uint32_t&, uint32_t&, uint32_t&);
 vector<string> getNextRow(ifstream& inFile);
 void getFlxBuffer(flexbuffers::Builder *, vector<string>, vector<int>);
 int findKeyIndexWithinSchema(string, string);
 uint64_t hashCompositeKey(string, vector<string>, vector<string>);
 int32_t jumpConsistentHash(uint64_t, int32_t);
 
-int main()
+int main(int argc, char *argv[])
 {
-	map<uint32_t, bucket_t> FBmap;
-	map<uint32_t, bucket_t>::iterator it;
-	fbBuilder *fbb;
-//	delete_vector *dead;
-//	rows_vector *rows;
-// ----------------------------------------------Open .csv File---------------------------------------------------
 	ifstream inFile;
-	string fileName = "";
-//	promptFileName(inFile, fileName);
-	inFile.open("lineitem-10K-rows.tbl",ifstream::in);
-// ---------------------------------------------Prompt for Configurable Variables------------------------------------
-	string input = "";
+	string file_name = "";
+	string schema_file_name = "";
+	vector<string> composite_key;
+	vector<int> schema;
 	uint32_t num_objs = 0;
 	uint32_t num_buckets = 0;
-	uint32_t rows_flush = 0;
-	uint32_t rows_total = 0;
+	uint32_t flush_rows = 0;
+	uint32_t read_rows = 0;
+
+	int opt;
+	while( (opt = getopt(argc, argv, "f:s:o:r:n:")) != -1) {
+		switch(opt) {
+			case 'f':
+				// Open .csv file
+				file_name = optarg;
+				promptDataFile(inFile, file_name);
+				break;
+			case 's':
+				// Get Schema (vector of enum types), schema file name, composite key
+				schema_file_name = optarg;
+				schema = getSchema(composite_key, schema_file_name);	// returns vector of enum data types and composite keys
+				break;
+			case 'o':
+				// Set # of Objects
+				num_objs = promptIntVariable("objects", optarg);
+				break;
+			case 'r':
+				// Set # of Rows to Read Until Flushed
+				flush_rows = promptIntVariable("rows until flush", optarg);
+				break;
+			case 'n':
+				// Set # of Total Rows to Read
+				read_rows = promptIntVariable("rows to read", optarg);
+				break;
+			
+			
+			
+		}
+	}
+
+	map<uint32_t, bucket_t> FBmap;
+	map<uint32_t, bucket_t>::iterator it;
+// ---------------------------------------------Prompt for Configurable Variables------------------------------------
+	string input = "";
 
 //	promptVariables(num_objs, rows_flush, rows_total);
-		num_objs = rows_flush = rows_total = 500;
+		num_objs = flush_rows = read_rows = 40;
 	num_buckets = num_objs;
-// -------------------------------------Read Schema File-----------------------------------------------
-	string schemaFileName = "";
-	vector<string> compositeKey;
-	vector<int> schema = getSchema(compositeKey, schemaFileName); // returns vector of enum types
 // -------------------------------------------Get Rows and Load into FB--------------------------------
 	vector<string> parsedRow = getNextRow(inFile);
-	int rowId = 500;
-/*
-	// Create Flexbuffer from Parsed Row and Schema
-	flexbuffers::Builder flx0;
-	flx0.Vector([&]() {
-		for(int i=0;i<(int)schema.size();i++) {
-			switch(schema[i]) {
-				case TypeInt:
-					flx0.Int( atoi(parsedRow[i].c_str()) );
-					break;
-				case TypeDouble:
-					flx0.Double( stod(parsedRow[i]) );
-					break;
-				case TypeChar:
-					flx0.Int( parsedRow[i][0] );
-					break;
-				case TypeDate:
-					flx0.String( parsedRow[i]);
-					break;
-				case TypeString:
-					flx0.String( parsedRow[i]);
-					break;
-				default:
-					flx0.String("EMPTY");
-					break;
-			}
-		}
-	});
-	flx0.Finish();*/
-	flxBuilder *flx0 = new flxBuilder();
-	getFlxBuffer(flx0, parsedRow, schema);
+	flexbuffers::Builder *flx = new flexbuffers::Builder();
+	getFlxBuffer(flx, parsedRow, schema);
 	// Get pointer to FlexBuffer
-	vector<uint8_t> flxPtr = flx0->GetBuffer();
+	vector<uint8_t> flxPtr = flx->GetBuffer();
 	cout<<"FlexBuff size: "<<flxPtr.size()<<endl;
 // ---------------------------------------------Hash Composite Key-------------------------------------------------
-	uint64_t hashKey = hashCompositeKey(schemaFileName, compositeKey, parsedRow);
+	uint64_t hashKey = hashCompositeKey(schema_file_name, composite_key, parsedRow);
 // --------------------------------------------Get Oid Using HashKey-----------------------------------------------
 	int32_t oid = jumpConsistentHash(hashKey, num_objs);
 	cout<<"OID :  "<<oid<<endl;
 
 // -----------------------------------------Get FB and insert-----------------------------------------------
-/*	bucket_t *current_bucket;
+	bucket_t current_bucket;
+	fbb fbPtr;
+//	delete_vector *dead;
+	rows_vector *rowsPtr;
 
+
+	// Get FB from map or use new FB
 	it = FBmap.find(oid);
 	if(it != FBmap.end()) {
-		current_bucket = &(it->second);
+		current_bucket = it->second;
 	}
-	else {
-		fbb = new fbBuilder();
-//		dead = new delete_vector();
-//		rows= new rows_vector();
-//		bucket_t bucket(*fbb, *dead, *rows);
-	//	bucket_t bucket(*fbb, *rows);
-		bucket_t bucket(*fbb);
-		pair<uint32_t, bucket_t > data(oid, bucket);
-		it = FBmap.insert(data);
-		current_bucket = &(FBmap.find(oid)->second);
+	else
+	{
+		current_bucket.oid = oid;
+		current_bucket.fb = new fbBuilder();
+		current_bucket.rowsv = new rows_vector();
+		FBmap.insert(pair<uint32_t, bucket_t>(oid,current_bucket));
 	}
-*/
-//	*fbb = current_bucket->fb;
+
+	fbPtr = current_bucket.fb;
 //	dead = &(current_bucket.dead);
-//	rows = &(current_bucket.vec);
-/*	
-	auto flxSerial = fbb->CreateVector(flxPtr);
-	auto row0 = CreateRows(*fbb, rowID++, flxSerial);
-	rows->push_back(row0);
+	rowsPtr = current_bucket.rowsv;
+
+	auto flxSerial = fbPtr->CreateVector(flxPtr);
+	int rowID = 500;
+	auto rowOffset = CreateRows(*fbPtr, rowID++, flxSerial);
+	rowsPtr->push_back(rowOffset);
+
 //	dead.push_back('0');
 
+	
 	// Flush if rows_flush was met
-	if( (int)rows->size() >= rows_flush) {
-		auto rows_vec = fbb->CreateVector(*rows);
+	if( (int)rowsPtr->size() >= 1) {
+		auto rows_vecOffset = fbPtr->CreateVector(*rowsPtr);
 		int version = 1;
-		auto tableOffset = CreateTable(*fbb, version, rows_vec);
-		fbb->Finish(tableOffset);
+		auto tableOffset = CreateTable(*fbPtr, version, rows_vecOffset);
+		fbPtr->Finish(tableOffset);
 
-		//Flush to Ceph
+		// Flush to Ceph Here TO OID bucket with n Rows
+		// Set Delete Vector
+		printf("Flushing %d to Ceph\n", oid);
 
-		fbb->Reset();
+		printf("Clearing FB Ptr and RowsVector Ptr, Delete Bucket from Map\n");
+		FBmap.erase(oid);
+		fbPtr->Reset();
+		delete fbPtr;
+		rowsPtr->clear();
+		delete rowsPtr;
+		delete flx;
 	}
-*/
+
+	// Iterate over map and flush each bucket
+
 
 // -----------------------------------------------------Initialize FlatBuffer ----------------------------------------
 	//	 Create a 'FlatBufferBuilder', which will be used to create our LINEITEM FlexBuffers
@@ -288,87 +302,66 @@ void assertionCheck(int orderkey, int partkey, int suppkey, int linenumber, floa
 
 }
 
-void promptFileName(ifstream& inFile, string& fileName) {
-	cout<<"Which file will we load from? : ";
-	getline(cin, fileName);
-	inFile.open(fileName, std::ifstream::in);
-	while(!inFile || strcmp(fileName.c_str(),"q") == 0 || strcmp(fileName.c_str(),"Q") == 0 )
-	{
-		if(strcmp(fileName.c_str(),"q")==0 || strcmp(fileName.c_str(),"Q")==0 )
-			exit(0);
+void promptDataFile(ifstream& inFile, string& file_name) {
+	// Open File
+	inFile.open(file_name, std::ifstream::in);
 
-		cout<<"Cannot open file! \t\t(Press Q or q to quit program)"<<endl;
+	// If file didn't open, prompt for data file
+	while(!inFile)
+	{
+		cout<<"Cannot open file!"<<endl;
 		cout<<"Which file will we load from? : ";
-		getline(cin, fileName);
-		inFile.open(fileName, ifstream::in);
+		getline(cin, file_name);
+		inFile.open(file_name, ifstream::in);
 	}
-	cout<<"'"<<fileName<<"' was sucessfully opened!"<<endl<<endl;
+	cout<<"'"<<file_name<<"' was sucessfully opened!"<<endl<<endl;
 }
-void promptVariables(uint32_t& num_objs, uint32_t& rows_flush, uint32_t& rows_total) {
-	string input = "";
-	
-	while(true) {
-		cout<<"How many objects?: ";
-		getline(cin, input);
-		stringstream myStream(input);
-		if(myStream >> num_objs)
+uint32_t promptIntVariable(string variable, string num_string) {
+	stringstream myStream(num_string);
+	uint32_t n = 0;
+
+	while( !(myStream >> n) ) {
+		cout<<"How many "<<variable<<"?: ";
+		getline(cin, num_string);
+		stringstream newStream(num_string);
+		if(newStream >> n)
 			break;
 		cout<<"Invalid number, please try again"<<endl;
 	}
-	while(true) {
-		cout<<"How many rows until buckets flushed?: ";
-		getline(cin, input);
-		stringstream myStream(input);
-		if(myStream >> rows_flush)
-			break;
-		cout<<"Invalid number, please try again"<<endl;
-	}
-	while(true) {
-		cout<<"How many rows would you like to read?: ";
-		getline(cin, input);
-		stringstream myStream(input);
-		if(myStream >> rows_total)
-			break;
-		cout<<"Invalid number, please try again"<<endl;
-	}
-	cout<<endl;
-	cout<<"Number of objects: "<<num_objs<<endl;	
-	cout<<"Number of rows until buckets are flushed: "<<rows_flush<<endl;
-	cout<<"Number of rows to be read: "<<rows_total<<endl<<endl;
+	cout<<"Number of "<<variable<<": "<<n<<endl<<endl;
+	return n;
 }
-vector<int> getSchema(vector<string>& compositeKey, string& schemaFileName) {
+
+vector<int> getSchema(vector<string>& compositeKey, string& schema_file_name) {
 	ifstream schemaFile;
-	string fileName = "";
 	vector<int> schema;
 
-	// Get Schema File
-//	cout<<"Which file will we get the schema from? : ";
-//	getline(cin, fileName);
-	fileName = "lineitem_schema.txt";
-	schemaFile.open(fileName, std::ifstream::in);
-	while(!schemaFile || strcmp(fileName.c_str(),"q")==0 || strcmp(fileName.c_str(),"Q")==0 )
+	// Try to open schema file
+	schemaFile.open(schema_file_name, std::ifstream::in);
+
+	// If schema file didn't open, prompt for schema file name
+	while(!schemaFile)
 	{
-		if(strcmp(fileName.c_str(),"q")==0 || strcmp(fileName.c_str(),"Q")==0 )
+		if(strcmp(schema_file_name.c_str(),"q")==0 || strcmp(schema_file_name.c_str(),"Q")==0 )
 			exit(0);
 
 		cout<<"Cannot open file! \t\t(Press Q or q to quit program)"<<endl;
 		cout<<"Which file will we get the schema from? : ";
-		getline(cin, fileName);
-		schemaFile.open(fileName, ifstream::in);
+		getline(cin, schema_file_name);
+		schemaFile.open(schema_file_name, ifstream::in);
 	}
-	// Parse Schema File for Data Types
-	string pKeys = "";
-	getline(schemaFile, pKeys);
-	compositeKey = split(pKeys,' ');
+	// Parse Schema File for Composite Key
+	string line = "";
+	getline(schemaFile, line);
+	compositeKey = split(line,' ');
 
-	string line;
+	// Parse Schema File for Data Types
 	while( getline(schemaFile, line) ) {
 		vector<string> parsedData = split(line, ' ');
 		schema.push_back( atoi(parsedData[3].c_str()) );
 	}
 
-	cout<<"'"<<fileName<<"' was sucessfully read and schema vector passed back!"<<endl<<endl;
-	schemaFileName = fileName;
+	cout<<"'"<<schema_file_name<<"' was sucessfully read and schema vector passed back!"<<endl<<endl;
 	schemaFile.close();
 	
 	return schema;
@@ -380,33 +373,33 @@ vector<string> getNextRow(ifstream& inFile) {
 	// Split by '|' deliminator
 	return split(row, '|');
 }
-void getFlxBuffer(flxBuilder *flx0, vector<string> parsedRow, vector<int> schema) {
+void getFlxBuffer(flxBuilder *flx, vector<string> parsedRow, vector<int> schema) {
 	// Create Flexbuffer from Parsed Row and Schema
-	flx0->Vector([&]() {
+	flx->Vector([&]() {
 		for(int i=0;i<(int)schema.size();i++) {
 			switch(schema[i]) {
 				case TypeInt:
-					flx0->Int( atoi(parsedRow[i].c_str()) );
+					flx->Int( atoi(parsedRow[i].c_str()) );
 					break;
 				case TypeDouble:
-					flx0->Double( stod(parsedRow[i]) );
+					flx->Double( stod(parsedRow[i]) );
 					break;
 				case TypeChar:
-					flx0->Int( parsedRow[i][0] );
+					flx->Int( parsedRow[i][0] );
 					break;
 				case TypeDate:
-					flx0->String( parsedRow[i]);
+					flx->String( parsedRow[i]);
 					break;
 				case TypeString:
-					flx0->String( parsedRow[i]);
+					flx->String( parsedRow[i]);
 					break;
 				default:
-					flx0->String("EMPTY");
+					flx->String("EMPTY");
 					break;
 			}
 		}
 	});
-	flx0->Finish();
+	flx->Finish();
 }
 int findKeyIndexWithinSchema(string schemaFileName, string key) {
 	ifstream schemaFile;
