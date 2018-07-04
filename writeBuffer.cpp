@@ -2,44 +2,51 @@
 // 6/25/18
 // Writing rows from files to Ceph
 
+#include <fcntl.h> // system call open
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <map>
 #include <unistd.h>	// for getOpt
 #include "flatbuffers/flexbuffers.h"
-#include "flatflexV2_generated.h"
+#include "skyhookv1_generated.h"
 
 using namespace std;
 using namespace Tables;
 
+uint64_t RID = 0;
 enum DataType {TypeInt = 1, TypeDouble, TypeChar, TypeDate, TypeString};
 typedef flatbuffers::FlatBufferBuilder fbBuilder;
 typedef flatbuffers::FlatBufferBuilder* fbb;
 typedef flexbuffers::Builder flxBuilder;
-//typedef vector<uint8_t> delete_vector;
-typedef vector<flatbuffers::Offset<Rows>> rows_vector;
+typedef vector<uint8_t> delete_vector;
+typedef vector<flatbuffers::Offset<Row>> rows_vector;
 
 typedef struct {
 	int oid;
-	fbBuilder *fb;
-//	delete_vector dead;
+	string table_name;
+	fbb fb;
+	delete_vector *deletev;
 	rows_vector *rowsv;
 } bucket_t;
 
 std::vector<std::string> split(const std::string &s, char delim);
 std::vector<int> splitDate(const std::string &s);
-void assertionCheck(int, int, int, int, float, float, float, float, int8_t, int8_t, vector<int>, vector<int>, vector<int>, string, string, string,
-			int, int, int, int, float, float, float, float, int8_t, int8_t,
-				flexbuffers::Vector, flexbuffers::Vector, flexbuffers::Vector, flexbuffers::String, flexbuffers::String, flexbuffers::String);
-
+string int_to_binary(uint64_t);
+void initializeNullbits(vector<uint64_t> *);
+void helpMenu();
 void promptDataFile(ifstream&, string&);
 vector<int> getSchema(vector<string>&, string&);
 uint32_t promptIntVariable(string, string);
+uint64_t getNextRID();
+void retrieveBucketFromOID(map<uint32_t, bucket_t> &, int32_t, bucket_t &);
+void insertRowIntoBucket(fbb, uint64_t, vector<uint64_t> *, uint8_t, vector<uint8_t>, delete_vector *, rows_vector *);
+void finishFlatBuffer(fbb, int8_t, string, delete_vector *, rows_vector *);
+void deleteBucket(map<uint32_t, bucket_t> &, uint32_t, fbb, delete_vector *, rows_vector *);
+int writeToDisk(uint32_t, fbb);
 
-void promptVariables(uint32_t&, uint32_t&, uint32_t&);
 vector<string> getNextRow(ifstream& inFile);
-void getFlxBuffer(flexbuffers::Builder *, vector<string>, vector<int>);
+void getFlxBuffer(flexbuffers::Builder *, vector<string>, vector<int>, vector<uint64_t> *);
 int findKeyIndexWithinSchema(string, string);
 uint64_t hashCompositeKey(string, vector<string>, vector<string>);
 int32_t jumpConsistentHash(uint64_t, int32_t);
@@ -56,8 +63,9 @@ int main(int argc, char *argv[])
 	uint32_t flush_rows = 0;
 	uint32_t read_rows = 0;
 
+// ----------------------------------------Verify Configurable Variables or Prompt For Them------------------------
 	int opt;
-	while( (opt = getopt(argc, argv, "f:s:o:r:n:")) != -1) {
+	while( (opt = getopt(argc, argv, "hf:s:o:r:n:")) != -1) {
 		switch(opt) {
 			case 'f':
 				// Open .csv file
@@ -72,6 +80,7 @@ int main(int argc, char *argv[])
 			case 'o':
 				// Set # of Objects
 				num_objs = promptIntVariable("objects", optarg);
+				num_buckets = num_objs;
 				break;
 			case 'r':
 				// Set # of Rows to Read Until Flushed
@@ -81,170 +90,65 @@ int main(int argc, char *argv[])
 				// Set # of Total Rows to Read
 				read_rows = promptIntVariable("rows to read", optarg);
 				break;
-			
-			
-			
+			case 'h':
+				helpMenu();
+				exit(0);
+				break;
 		}
 	}
+// -------------------------------------------Get Row and Load into FlexBuffer--------------------------------
 
-	map<uint32_t, bucket_t> FBmap;
-	map<uint32_t, bucket_t>::iterator it;
-// ---------------------------------------------Prompt for Configurable Variables------------------------------------
-	string input = "";
-
-//	promptVariables(num_objs, rows_flush, rows_total);
-		num_objs = flush_rows = read_rows = 40;
-	num_buckets = num_objs;
-// -------------------------------------------Get Rows and Load into FB--------------------------------
 	vector<string> parsedRow = getNextRow(inFile);
 	flexbuffers::Builder *flx = new flexbuffers::Builder();
-	getFlxBuffer(flx, parsedRow, schema);
-	// Get pointer to FlexBuffer
-	vector<uint8_t> flxPtr = flx->GetBuffer();
-	cout<<"FlexBuff size: "<<flxPtr.size()<<endl;
+	vector<uint64_t> *nullbits = new vector<uint64_t>(2);
+	initializeNullbits(nullbits);	// initialize nullbits to 0
+	getFlxBuffer(flx, parsedRow, schema, nullbits);	// load parsed row into our flxBuilder and update nullbits
+	vector<uint8_t> flxPtr = flx->GetBuffer();	// get pointer to FlexBuffer
 // ---------------------------------------------Hash Composite Key-------------------------------------------------
+
 	uint64_t hashKey = hashCompositeKey(schema_file_name, composite_key, parsedRow);
 // --------------------------------------------Get Oid Using HashKey-----------------------------------------------
+
 	int32_t oid = jumpConsistentHash(hashKey, num_objs);
-	cout<<"OID :  "<<oid<<endl;
+			cout<<"OID :  "<<oid<<endl;
 
 // -----------------------------------------Get FB and insert-----------------------------------------------
+
+	map<uint32_t, bucket_t> FBmap;
 	bucket_t current_bucket;
 	fbb fbPtr;
-//	delete_vector *dead;
+	delete_vector *deletePtr;
 	rows_vector *rowsPtr;
 
-
-	// Get FB from map or use new FB
-	it = FBmap.find(oid);
-	if(it != FBmap.end()) {
-		current_bucket = it->second;
-	}
-	else
-	{
-		current_bucket.oid = oid;
-		current_bucket.fb = new fbBuilder();
-		current_bucket.rowsv = new rows_vector();
-		FBmap.insert(pair<uint32_t, bucket_t>(oid,current_bucket));
-	}
+	retrieveBucketFromOID(FBmap, oid, current_bucket);
 
 	fbPtr = current_bucket.fb;
-//	dead = &(current_bucket.dead);
+	deletePtr = current_bucket.deletev;
 	rowsPtr = current_bucket.rowsv;
 
-	auto flxSerial = fbPtr->CreateVector(flxPtr);
-	int rowID = 500;
-	auto rowOffset = CreateRows(*fbPtr, rowID++, flxSerial);
-	rowsPtr->push_back(rowOffset);
-
-//	dead.push_back('0');
+	uint64_t RID = getNextRID();
+	uint8_t schema_version = 1;
+	insertRowIntoBucket(fbPtr, RID, nullbits, schema_version, flxPtr, deletePtr, rowsPtr);
+	delete flx;
+	delete nullbits;
 
 	
 	// Flush if rows_flush was met
-	if( (int)rowsPtr->size() >= 1) {
-		auto rows_vecOffset = fbPtr->CreateVector(*rowsPtr);
-		int version = 1;
-		auto tableOffset = CreateTable(*fbPtr, version, rows_vecOffset);
-		fbPtr->Finish(tableOffset);
+	if( rowsPtr->size() >= flush_rows) {
+		uint8_t SkyHookVersion = 1;
+		finishFlatBuffer(fbPtr, SkyHookVersion, current_bucket.table_name, deletePtr, rowsPtr);
 
-		// Flush to Ceph Here TO OID bucket with n Rows
-		// Set Delete Vector
-		printf("Flushing %d to Ceph\n", oid);
+		printf("Flushing bucket %d to Ceph\n", oid);
+		// Flush to Ceph Here TO OID bucket with n Rows or Crash if Failed
+		if(writeToDisk(oid, fbPtr) < 0)
+			exit(0);
 
 		printf("Clearing FB Ptr and RowsVector Ptr, Delete Bucket from Map\n");
-		FBmap.erase(oid);
-		fbPtr->Reset();
-		delete fbPtr;
-		rowsPtr->clear();
-		delete rowsPtr;
-		delete flx;
+		deleteBucket(FBmap, oid, fbPtr, deletePtr, rowsPtr);
 	}
 
 	// Iterate over map and flush each bucket
 
-
-// -----------------------------------------------------Initialize FlatBuffer ----------------------------------------
-	//	 Create a 'FlatBufferBuilder', which will be used to create our LINEITEM FlexBuffers
-//	flatbuffers::FlatBufferBuilder fbbuilder(1024);
-//	vector<flatbuffers::Offset<Rows>> rows_vector;
-
-	// Get Pointer to FlexBuffer Row
-//	vector<uint8_t> flxPtr = flx0.GetBuffer();
-//	int flxSize = flx0.GetSize();
-//	cout<<"FlexBuffer Size: "<<flxSize<<" bytes"<<endl;
-
-/*	auto vec = flexbuffers::GetRoot(flxPtr).AsVector();
-	int v0 = vec[0].AsInt32();
-	int v1 = vec[1].AsInt32();
-	int v2 = vec[2].AsInt32();
-	int v3 = vec[3].AsInt32();
-	double v4 = vec[4].AsDouble();
-	double v5 = vec[5].AsDouble();
-	double v6 = vec[6].AsDouble();
-	double v7 = vec[7].AsDouble();
-	char v8 = char(vec[8].AsInt32());
-	char v9 = (char)vec[9].AsInt32();
-	string v10 = vec[10].AsString().str();
-	string v11 = vec[11].AsString().str();
-	string v12 = vec[12].AsString().str();
-	string v13 = vec[13].AsString().str();
-	string v14 = vec[14].AsString().str();
-	string v15 = vec[15].AsString().str();
-	cout<<v0<<endl;
-	cout<<v1<<endl;
-	cout<<v2<<endl;
-	cout<<v3<<endl;
-	cout<<v4<<endl;
-	printf("%.8f\n",v5);
-	cout<<v6<<endl;
-	cout<<v7<<endl;
-	cout<<v8<<endl;
-	cout<<v9<<endl;
-	cout<<v10<<endl;
-	cout<<v11<<endl;
-	cout<<v12<<endl;
-	cout<<v13<<endl;
-	cout<<v14<<endl;
-	cout<<v15<<endl;
-*/
-
-	// Hash on Composite Key
-		
-/*
-// ---------------------------------------Create 4MB of FlexBuffers----------------------------------------
-	int nRows = 20900;
-	for(int i=0;i<nRows;i++) {
-		// Serialize buffer into a Flatbuffer::Vector
-		auto flxSerial = fbbuilder.CreateVector(flxPtr);
-		// Create a Row from FlexBuffer and new ID
-		auto row0 = CreateRows(fbbuilder, rowID++, flxSerial);
-		// Push new row onto vector of rows
-		rows_vector.push_back(row0);
-	}
-//----------------------------------------Create FlatBuffer of FlexBuffers --------------------------------
-	// Serializing vector of Rows adds 12 bytes
-	auto rows_vec = fbbuilder.CreateVector(rows_vector);
-	int version = 1;
-	auto tableOffset = CreateTable(fbbuilder, version, rows_vec);
-	fbbuilder.Finish(tableOffset);
-
-// --------------------------------------------Start Timing Rows-------------------------------------------
-//
-	// Get Pointer to FlatBuffer
-	uint8_t *buf = fbbuilder.GetBufferPointer();
-	int size = fbbuilder.GetSize();
-	cout<<"Buffer Size (FlatBuffer of FlexBuffers): "<<size<<" bytes"<<endl;
-	// Check number of FlexBuffers in FlatBuffer
-	volatile auto table = GetMutableTable(buf);
-	int recsCount = table->data()->size();
-	cout<<"Row Count: "<<recsCount<<endl;
-
-				table = GetMutableTable(buf);
-				const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = table->data();
-				for(int k=0;k<rowNum;k++) {
-					auto flxRoot = recs->Get(k)->rows_flexbuffer_root();
-					auto mutatedCheck = flxRoot.AsVector()[1].MutateUInt(556);
-*/
 	return 0;
 }
 
@@ -266,42 +170,15 @@ std::vector<int> splitDate(const std::string &s) {
 	}
 	return tokens;
 }
-void assertionCheck(int orderkey, int partkey, int suppkey, int linenumber, float quantity, float extendedprice, float discount, float tax,
-			int8_t returnflag, int8_t linestatus, vector<int> shipdate, vector<int> receiptdate, vector<int> commitdate,
-			string shipinstruct, string shipmode, string comment,
-			int _orderkey, int _partkey, int _suppkey, int _linenumber, float _quantity, float _extendedprice, float _discount, float _tax,
-			int8_t _returnflag, int8_t _linestatus, flexbuffers::Vector _shipdate, flexbuffers::Vector _receiptdate, flexbuffers::Vector _commitdate,
-			flexbuffers::String _shipinstruct, flexbuffers::String _shipmode, flexbuffers::String _comment) {
 
-	assert(_orderkey == orderkey);
-	assert(_partkey == partkey);
-	assert(_suppkey == suppkey);
-	assert(_linenumber == linenumber);
-	
-	assert(_quantity == quantity);
-	assert(_extendedprice == extendedprice);
-	assert(_discount == discount);
-	assert(_tax == tax);
-
-	assert(_returnflag == returnflag);
-	assert(_linestatus == linestatus);
-
-	assert(_shipdate[0].AsInt32() == shipdate[0]);
-	assert(_shipdate[1].AsInt32() == shipdate[1]);
-	assert(_shipdate[2].AsInt32() == shipdate[2]);
-	assert(_receiptdate[0].AsInt32() == receiptdate[0]);
-	assert(_receiptdate[1].AsInt32() == receiptdate[1]);
-	assert(_receiptdate[2].AsInt32() == receiptdate[2]);
-	assert(_commitdate[0].AsInt32() == commitdate[0]);
-	assert(_commitdate[1].AsInt32() == commitdate[1]);
-	assert(_commitdate[2].AsInt32() == commitdate[2]);
-
-	assert( strcmp( _shipinstruct.c_str(), shipinstruct.c_str() ) == 0);
-	assert( strcmp( _shipmode.c_str(), shipmode.c_str() ) == 0);
-	assert( strcmp( _comment.c_str(), comment.c_str() ) == 0);
-
+void helpMenu() {
+	printf("-h HELP MENU\n");
+	printf("\t-f [file_name]\n");
+	printf("\t-s [schema_file_name]\n");
+	printf("\t-o [number_of_objects]\n");
+	printf("\t-r [number_of_rows_until_flush]\n");
+	printf("\t-n [number_of_rows_to_read]\n");
 }
-
 void promptDataFile(ifstream& inFile, string& file_name) {
 	// Open File
 	inFile.open(file_name, std::ifstream::in);
@@ -331,7 +208,6 @@ uint32_t promptIntVariable(string variable, string num_string) {
 	cout<<"Number of "<<variable<<": "<<n<<endl<<endl;
 	return n;
 }
-
 vector<int> getSchema(vector<string>& compositeKey, string& schema_file_name) {
 	ifstream schemaFile;
 	vector<int> schema;
@@ -373,29 +249,76 @@ vector<string> getNextRow(ifstream& inFile) {
 	// Split by '|' deliminator
 	return split(row, '|');
 }
-void getFlxBuffer(flxBuilder *flx, vector<string> parsedRow, vector<int> schema) {
+void getFlxBuffer(flxBuilder *flx, vector<string> parsedRow, vector<int> schema, vector<uint64_t> *nullbits) {
+	bool nullFlag = false;
+	string nullcmp = "NULL";
 	// Create Flexbuffer from Parsed Row and Schema
 	flx->Vector([&]() {
 		for(int i=0;i<(int)schema.size();i++) {
-			switch(schema[i]) {
-				case TypeInt:
-					flx->Int( atoi(parsedRow[i].c_str()) );
-					break;
-				case TypeDouble:
-					flx->Double( stod(parsedRow[i]) );
-					break;
-				case TypeChar:
-					flx->Int( parsedRow[i][0] );
-					break;
-				case TypeDate:
-					flx->String( parsedRow[i]);
-					break;
-				case TypeString:
-					flx->String( parsedRow[i]);
-					break;
-				default:
-					flx->String("EMPTY");
-					break;
+			nullFlag = false;
+			if(strcmp(parsedRow[i].c_str(), nullcmp.c_str() ) == 0)
+				nullFlag = true;
+
+			if(nullFlag) {
+				// Mark nullbit
+				uint64_t nullMask = 0x00;
+				if(i<64) {
+					nullMask = 1lu << (63-i);
+					nullbits[0][0] |=  nullMask;
+				}
+				else {
+					nullMask = 1lu << (63- (i-64));
+					nullbits[0][1] |= nullMask;
+				}
+				// Put a dummy variable to hold the index for future updates
+				switch(schema[i]) {
+					case TypeInt:
+						flx->Int(0);
+						break;
+					case TypeDouble:
+						flx->Double(0.0);
+						break;
+					case TypeChar:
+						flx->Int('0');
+						break;
+					case TypeDate:
+						flx->String("1993-11-10");
+						break;
+					case TypeString:
+						flx->String("This will be pooled with strings");
+						break;
+					default:
+						flx->String("EMPTY");
+						break;
+				}
+			}
+			else {
+				switch(schema[i]) {
+					case TypeInt: {
+						flx->Int( atoi(parsedRow[i].c_str()) );
+						break;
+					}
+					case TypeDouble: {
+						flx->Double( stod(parsedRow[i]) );
+						break;
+					}
+					case TypeChar: {
+						flx->Int( parsedRow[i][0] );
+						break;
+					}
+					case TypeDate: {
+						flx->String( parsedRow[i]);
+						break;
+					}
+					case TypeString: {
+						flx->String( parsedRow[i]);
+						break;
+					}
+					default: {
+						flx->String("EMPTY");
+						break;
+					}
+				}
 			}
 		}
 	});
@@ -446,4 +369,80 @@ int32_t jumpConsistentHash(uint64_t key, int32_t num_buckets) {
 		j = (b+1) * (double(1LL << 31) / double((key>>33) + 1));
 	}
 	return b;
+}
+string int_to_binary(uint64_t value) {
+	string output = "";
+	for(int i=63;i>=0;i--)
+	{
+		if( value & ( 1lu<<i) )
+			output += "1";
+		else
+			output += "0";
+	}
+	return output;
+}
+void initializeNullbits(vector<uint64_t> *nullbits) {
+	nullbits->push_back((uint64_t) 0);
+	nullbits->push_back((uint64_t) 0);
+}
+void retrieveBucketFromOID(map<uint32_t, bucket_t> &FBmap, int32_t oid, bucket_t &current_bucket) {
+	// Get FB from map or use new FB
+	map<uint32_t, bucket_t>::iterator it;
+	it = FBmap.find(oid);
+	if(it != FBmap.end()) {
+		current_bucket = it->second;
+	}
+	else
+	{
+		current_bucket.oid = oid;
+		current_bucket.table_name = "LINEITEM";
+		current_bucket.fb = new fbBuilder();
+		current_bucket.deletev = new delete_vector();
+		current_bucket.rowsv = new rows_vector();
+		FBmap.insert(pair<uint32_t, bucket_t>(oid,current_bucket));
+	}
+}
+void finishFlatBuffer(fbb fbPtr, int8_t version, string table_name, delete_vector *deletePtr, rows_vector *rowsPtr) {
+	auto table_nameOffset = fbPtr->CreateString(table_name);
+	auto delete_vecOffset = fbPtr->CreateVector(*deletePtr);
+	auto rows_vecOffset = fbPtr->CreateVector(*rowsPtr);
+	auto tableOffset = CreateTable(*fbPtr, version, table_nameOffset, delete_vecOffset, rows_vecOffset);
+	fbPtr->Finish(tableOffset);
+}
+void insertRowIntoBucket(fbb fbPtr, uint64_t RID, vector<uint64_t> *nullbits, uint8_t schema_version, vector<uint8_t> flxPtr, delete_vector *deletePtr, rows_vector *rowsPtr) {
+
+	// Serialize FlexBuffer row into FlatBufferBuilder
+	auto flxSerial = fbPtr->CreateVector(flxPtr);
+	auto nullbitsSerial = fbPtr->CreateVector(*nullbits);
+	auto rowOffset = CreateRow(*fbPtr, RID, nullbitsSerial, schema_version, flxSerial);
+	deletePtr->push_back(0);
+	rowsPtr->push_back(rowOffset);
+}
+void deleteBucket(map<uint32_t, bucket_t> &FBmap, uint32_t oid, fbb fbPtr, delete_vector *deletePtr, rows_vector *rowsPtr) {
+		FBmap.erase(oid);
+		fbPtr->Reset();
+		delete fbPtr;
+		deletePtr->clear();
+		delete deletePtr;
+		rowsPtr->clear();
+		delete rowsPtr;
+}
+uint64_t getNextRID() {
+	return RID++;
+}
+int writeToDisk(uint32_t oid, fbb fbPtr) {
+	string file_name = to_string(oid) + ".bin";
+	int fd = open(file_name.c_str(), O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
+	if( fd < 0 ) {
+		printf("Error opening '\%s'!\n", file_name.c_str());
+		return -1;
+	}
+	int buff_size = fbPtr->GetSize();
+	int bytes_written = write(fd, (void*) fbPtr->GetBufferPointer(), (size_t) buff_size );
+	if( bytes_written != buff_size) {
+		printf("Error writing bytes to disk with oid: %d!\n", oid);
+		return -1;
+	}
+	printf("Wrote %d bytes to '%s'\n", bytes_written, file_name.c_str());
+	return 0;
 }
