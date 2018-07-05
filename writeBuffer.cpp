@@ -26,6 +26,7 @@ typedef vector<flatbuffers::Offset<Row>> rows_vector;
 
 typedef struct {
 	uint64_t oid;
+	uint32_t nrows;
 	string table_name;
 	fbb fb;
 	delete_vector *deletev;
@@ -41,12 +42,12 @@ void promptDataFile(ifstream&, string&);
 vector<int> getSchema(vector<string>&, string&);
 uint32_t promptIntVariable(string, string);
 uint64_t getNextRID();
-void retrieveBucketFromOID(map<uint64_t, bucket_t> &, uint64_t, bucket_t &);
+bucket_t *retrieveBucketFromOID(map<uint64_t, bucket_t *> &, uint64_t);
 void insertRowIntoBucket(fbb, uint64_t, vector<uint64_t> *, uint8_t, vector<uint8_t>, delete_vector *, rows_vector *);
-void finishFlatBuffer(fbb, int8_t, string, delete_vector *, rows_vector *);
-void deleteBucket(map<uint64_t, bucket_t> &, uint64_t, fbb, delete_vector *, rows_vector *);
+void finishFlatBuffer(fbb, int8_t, string, delete_vector *, rows_vector *, uint32_t);
+void deleteBucket(bucket_t *, map<uint64_t, bucket_t *> &, uint64_t, fbb, delete_vector *, rows_vector *);
 int writeToDisk(uint64_t, fbb);
-void flushFlatBuffer(map<uint64_t, bucket_t> &, fbb, uint8_t, bucket_t, delete_vector *, rows_vector *);
+void flushFlatBuffer(map<uint64_t, bucket_t *> &, fbb, uint8_t, bucket_t *, delete_vector *, rows_vector *);
 
 vector<string> getNextRow(ifstream& inFile);
 void getFlxBuffer(flexbuffers::Builder *, vector<string>, vector<int>, vector<uint64_t> *);
@@ -100,16 +101,16 @@ int main(int argc, char *argv[])
 		}
 	}
 // -----------------------------------------Read Rows and Load into Corresponding FlatBuffer------------------------
-	map<uint64_t, bucket_t> FBmap;
-	bucket_t current_bucket;
+	map<uint64_t, bucket_t *> FBmap;
+	bucket_t *current_bucket;
 	fbb fbPtr;
 	delete_vector *deletePtr;
 	rows_vector *rowsPtr;
 	
-	uint32_t rows_loaded = 0;
+	uint32_t rows_loaded_into_fb = 0;
 	vector<string> parsedRow = getNextRow(inFile);
 	
-	while( (rows_loaded < read_rows) && (!inFile.eof()) ) {
+	while( (rows_loaded_into_fb < read_rows) && (!inFile.eof()) ) {
 		// -------------------------------------------Get Row and Load into FlexBuffer---------
 
 		flexbuffers::Builder *flx = new flexbuffers::Builder();
@@ -130,37 +131,42 @@ int main(int argc, char *argv[])
 
 		// -----------------------------------------Get FB and insert--------------------------
 
-
-		retrieveBucketFromOID(FBmap, oid, current_bucket);
-
-		fbPtr = current_bucket.fb;
-		deletePtr = current_bucket.deletev;
-		rowsPtr = current_bucket.rowsv;
+		printf("Inserting Row %d into Bucket %ld\n", rows_loaded_into_fb, oid);
+		current_bucket = retrieveBucketFromOID(FBmap, oid);
+		fbPtr = current_bucket->fb;
+		deletePtr = current_bucket->deletev;
+		rowsPtr = current_bucket->rowsv;
 
 		uint64_t RID = getNextRID();
 
 		insertRowIntoBucket(fbPtr, RID, nullbits, SCHEMA_VERSION, flxPtr, deletePtr, rowsPtr);
-		rows_loaded++;
+		current_bucket->nrows++;
+		rows_loaded_into_fb++;
 		delete flx;
 		delete nullbits;
 
 		
 		// --------------------------------- Flush if rows_flush was met--------------------
 		if( rowsPtr->size() >= flush_rows) {
+			assert(current_bucket->nrows == rowsPtr->size() );
+			assert(current_bucket->nrows == deletePtr->size() );
+			printf("Flushing bucket %ld to Ceph with %d rows\n", oid, current_bucket->nrows);
 			// Flush FlatBuffer to Ceph (currently writes to a file on disk)
 			flushFlatBuffer(FBmap, fbPtr, SKYHOOK_VERSION, current_bucket, deletePtr, rowsPtr);
 		}
 		// Get next row
 		parsedRow = getNextRow(inFile);
 	}
+
 	// ---------------------------Iterate over map and flush each bucket-----------------------
-	for(map<uint64_t, bucket_t>::iterator it = FBmap.begin(); it != FBmap.end(); ++it) {
+	for(map<uint64_t, bucket_t *>::iterator it = FBmap.begin(); it != FBmap.end(); ++it) {
 		current_bucket = it->second;
 		
-		fbPtr = current_bucket.fb;
-		deletePtr = current_bucket.deletev;
-		rowsPtr = current_bucket.rowsv;
+		fbPtr = current_bucket->fb;
+		deletePtr = current_bucket->deletev;
+		rowsPtr = current_bucket->rowsv;
 
+		printf("Flushing bucket %ld to Ceph with %d rows\n", current_bucket->oid, current_bucket->nrows);
 		flushFlatBuffer(FBmap, fbPtr, SKYHOOK_VERSION, current_bucket, deletePtr, rowsPtr);
 	}
 
@@ -416,29 +422,33 @@ void initializeNullbits(vector<uint64_t> *nullbits) {
 	nullbits->push_back((uint64_t) 0);
 }
 
-void retrieveBucketFromOID(map<uint64_t, bucket_t> &FBmap, uint64_t oid, bucket_t &current_bucket) {
+bucket_t *retrieveBucketFromOID(map<uint64_t, bucket_t *> &FBmap, uint64_t oid) {
+	bucket_t *current_bucket;
 	// Get FB from map or use new FB
-	map<uint64_t, bucket_t>::iterator it;
+	map<uint64_t, bucket_t *>::iterator it;
 	it = FBmap.find(oid);
 	if(it != FBmap.end()) {
 		current_bucket = it->second;
 	}
 	else
 	{
-		current_bucket.oid = oid;
-		current_bucket.table_name = "LINEITEM";
-		current_bucket.fb = new fbBuilder();
-		current_bucket.deletev = new delete_vector();
-		current_bucket.rowsv = new rows_vector();
-		FBmap.insert(pair<uint64_t, bucket_t>(oid,current_bucket));
+		current_bucket = new bucket_t();
+		current_bucket->oid = oid;
+		current_bucket->nrows = 0;
+		current_bucket->table_name = "LINEITEM";
+		current_bucket->fb = new fbBuilder();
+		current_bucket->deletev = new delete_vector();
+		current_bucket->rowsv = new rows_vector();
+		FBmap.insert(pair<uint64_t, bucket_t *>(oid,current_bucket));
 	}
+	return current_bucket;
 }
 
-void finishFlatBuffer(fbb fbPtr, int8_t version, string table_name, delete_vector *deletePtr, rows_vector *rowsPtr) {
+void finishFlatBuffer(fbb fbPtr, int8_t version, string table_name, delete_vector *deletePtr, rows_vector *rowsPtr, uint32_t nrows) {
 	auto table_nameOffset = fbPtr->CreateString(table_name);
 	auto delete_vecOffset = fbPtr->CreateVector(*deletePtr);
 	auto rows_vecOffset = fbPtr->CreateVector(*rowsPtr);
-	auto tableOffset = CreateTable(*fbPtr, version, table_nameOffset, delete_vecOffset, rows_vecOffset);
+	auto tableOffset = CreateTable(*fbPtr, version, table_nameOffset, delete_vecOffset, rows_vecOffset, nrows);
 	fbPtr->Finish(tableOffset);
 }
 
@@ -452,7 +462,7 @@ void insertRowIntoBucket(fbb fbPtr, uint64_t RID, vector<uint64_t> *nullbits, ui
 	rowsPtr->push_back(rowOffset);
 }
 
-void deleteBucket(map<uint64_t, bucket_t> &FBmap, uint64_t oid, fbb fbPtr, delete_vector *deletePtr, rows_vector *rowsPtr) {
+void deleteBucket(bucket_t *current_bucket, map<uint64_t, bucket_t *> &FBmap, uint64_t oid, fbb fbPtr, delete_vector *deletePtr, rows_vector *rowsPtr) {
 		printf("Clearing FB Ptr and RowsVector Ptr, Delete Bucket from Map\n\n");
 		
 		FBmap.erase(oid);
@@ -462,6 +472,7 @@ void deleteBucket(map<uint64_t, bucket_t> &FBmap, uint64_t oid, fbb fbPtr, delet
 		delete deletePtr;
 		rowsPtr->clear();
 		delete rowsPtr;
+		delete current_bucket;
 }
 
 uint64_t getNextRID() {
@@ -469,7 +480,6 @@ uint64_t getNextRID() {
 }
 
 int writeToDisk(uint64_t oid, fbb fbPtr) {
-	printf("Flushing bucket %ld to Ceph\n", oid);
 	
 	string file_name = to_string(oid) + ".bin";
 	int fd = open(file_name.c_str(), O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
@@ -501,14 +511,14 @@ int writeToDisk(uint64_t oid, fbb fbPtr) {
 	return 0;
 }
 
-void flushFlatBuffer(map<uint64_t, bucket_t> &FBmap, fbb fbPtr, uint8_t SKYHOOK_VERSION, bucket_t current_bucket, delete_vector *deletePtr, rows_vector *rowsPtr) {
+void flushFlatBuffer(map<uint64_t, bucket_t *> &FBmap, fbb fbPtr, uint8_t SKYHOOK_VERSION, bucket_t *current_bucket, delete_vector *deletePtr, rows_vector *rowsPtr) {
 	// Finish FlatBuffer
-	finishFlatBuffer(fbPtr, SKYHOOK_VERSION, current_bucket.table_name, deletePtr, rowsPtr);
+	finishFlatBuffer(fbPtr, SKYHOOK_VERSION, current_bucket->table_name, deletePtr, rowsPtr, current_bucket->nrows);
 
-	uint64_t oid = current_bucket.oid;
+	uint64_t oid = current_bucket->oid;
 	// Flush to Ceph Here TO OID bucket with n Rows or Crash if Failed
 	if(writeToDisk(oid, fbPtr) < 0)
 		exit(0);
 	// Remove bucket from FBMap and Deallocate pointers
-	deleteBucket(FBmap, oid, fbPtr, deletePtr, rowsPtr);
+	deleteBucket(current_bucket, FBmap, oid, fbPtr, deletePtr, rowsPtr);
 }

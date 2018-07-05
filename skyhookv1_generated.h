@@ -18,7 +18,8 @@ struct Table FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
     VT_VERSION = 4,
     VT_TABLE_NAME = 6,
     VT_DELETE_VECTOR = 8,
-    VT_ROWS = 10
+    VT_ROWS = 10,
+    VT_NROWS = 12
   };
   uint8_t version() const {
     return GetField<uint8_t>(VT_VERSION, 0);
@@ -32,6 +33,9 @@ struct Table FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   const flatbuffers::Vector<flatbuffers::Offset<Row>> *rows() const {
     return GetPointer<const flatbuffers::Vector<flatbuffers::Offset<Row>> *>(VT_ROWS);
   }
+  uint32_t nrows() const {
+    return GetField<uint32_t>(VT_NROWS, 0);
+  }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint8_t>(verifier, VT_VERSION) &&
@@ -42,6 +46,7 @@ struct Table FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            VerifyOffset(verifier, VT_ROWS) &&
            verifier.Verify(rows()) &&
            verifier.VerifyVectorOfTables(rows()) &&
+           VerifyField<uint32_t>(verifier, VT_NROWS) &&
            verifier.EndTable();
   }
 };
@@ -61,6 +66,9 @@ struct TableBuilder {
   void add_rows(flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<Row>>> rows) {
     fbb_.AddOffset(Table::VT_ROWS, rows);
   }
+  void add_nrows(uint32_t nrows) {
+    fbb_.AddElement<uint32_t>(Table::VT_NROWS, nrows, 0);
+  }
   explicit TableBuilder(flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -78,8 +86,10 @@ inline flatbuffers::Offset<Table> CreateTable(
     uint8_t version = 0,
     flatbuffers::Offset<flatbuffers::String> table_name = 0,
     flatbuffers::Offset<flatbuffers::Vector<uint8_t>> delete_vector = 0,
-    flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<Row>>> rows = 0) {
+    flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<Row>>> rows = 0,
+    uint32_t nrows = 0) {
   TableBuilder builder_(_fbb);
+  builder_.add_nrows(nrows);
   builder_.add_rows(rows);
   builder_.add_delete_vector(delete_vector);
   builder_.add_table_name(table_name);
@@ -92,13 +102,15 @@ inline flatbuffers::Offset<Table> CreateTableDirect(
     uint8_t version = 0,
     const char *table_name = nullptr,
     const std::vector<uint8_t> *delete_vector = nullptr,
-    const std::vector<flatbuffers::Offset<Row>> *rows = nullptr) {
+    const std::vector<flatbuffers::Offset<Row>> *rows = nullptr,
+    uint32_t nrows = 0) {
   return Tables::CreateTable(
       _fbb,
       version,
       table_name ? _fbb.CreateString(table_name) : 0,
       delete_vector ? _fbb.CreateVector<uint8_t>(*delete_vector) : 0,
-      rows ? _fbb.CreateVector<flatbuffers::Offset<Row>>(*rows) : 0);
+      rows ? _fbb.CreateVector<flatbuffers::Offset<Row>>(*rows) : 0,
+      nrows);
 }
 
 struct Row FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
