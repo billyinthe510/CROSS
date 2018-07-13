@@ -1,16 +1,3 @@
-// Written by Billy Lai
-// 5/30/18
-// Updating a LINEITEM field within a FlatBuffer of FlexBuffers (Rewriting FlatBuffer)
-//
-// Timed:
-//	Read n FlexBuffer Rows
-//		Create new FlexBuffer with the values and updated value
-//		Throw into Rows Vector
-//	Read remaining Rows
-//		Throw into Rows Vector
-//	Serialize Rows Vector
-//	Create Table
-
 /*
 * Copyright (C) 2018 The Regents of the University of California
 * All Rights Reserved
@@ -20,12 +7,27 @@
 * by the Free Software Foundation.
 *
 */
+
+/*
+*  Updating a LINEITEM field within a FlatBuffer of FlexBuffers (Rewriting FlatBuffer)
+* 
+*  Timed:
+*	Read n FlexBuffer Rows
+*		Create new FlexBuffer with the values and updated value
+*		Throw into Rows Vector
+* 	Read remaining Rows
+*		Throw into Rows Vector
+*	Serialize Rows Vector
+*	Create Table
+*
+*/
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <sys/time.h>
-#include "flatbuffers/flexbuffers.h"
-#include "flatflexV2_generated.h"
+#include "../header_files/flatbuffers/flexbuffers.h"
+#include "../header_files/flatflexV2_generated.h"
 
 using namespace std;
 using namespace Tables;
@@ -176,7 +178,7 @@ int main()
 	int _size = 0;
 	flatbuffers::FlatBufferBuilder _fbbuilder(1024);
 
-	// Update COLUMN by Rewriting FlatBuffer
+	// ADD COLUMN by Rewriting FlatBuffer
 		for(int i=0;i<n2;i++) {
 			avg = 0;
 			auto _table = GetTable(buf);

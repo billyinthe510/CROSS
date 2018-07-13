@@ -7,15 +7,12 @@
 * by the Free Software Foundation.
 *
 */
-// Written by Billy Lai
-// 5/23/18
-// Reading and Writing MultiRow LineItem FlatBuffers
 
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <sys/time.h>
-#include "multirowFlatBuffer_generated.h"
+#include "../header_files/multirowFlatBuffer_generated.h"
 
 using namespace std;
 using namespace Tables;

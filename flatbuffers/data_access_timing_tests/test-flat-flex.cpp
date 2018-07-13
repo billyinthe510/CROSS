@@ -7,16 +7,13 @@
 * by the Free Software Foundation.
 *
 */
-// Written by Billy Lai
-// 5/8/18
-// Reading and Writing LineItem FlatBuffers
 
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <sys/time.h>
-#include "flatbuffers/flexbuffers.h"
-#include "flatflex_generated.h"
+#include "../header_files/flatbuffers/flexbuffers.h"
+#include "../header_files/flatflex_generated.h"
 
 using namespace std;
 using namespace Tables;
@@ -148,6 +145,9 @@ int main()
 	flexbuffers::String _shipinstruct = tempflxRoot[15].AsString();;
 	flexbuffers::String _shipmode = tempflxRoot[15].AsString();
 	flexbuffers::String _comment = tempflxRoot[15].AsString();
+
+// ------------------------------------------------------------------------------Testing Mutation of FlexBuffer Serialized
+	
 
 	// Setup the Timing test
 	int rowNum = 0;

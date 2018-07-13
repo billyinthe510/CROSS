@@ -1,7 +1,3 @@
-// Written by Billy Lai
-// 5/8/18
-// Reading and Writing LineItem FlatBuffers
-
 /*
 * Copyright (C) 2018 The Regents of the University of California
 * All Rights Reserved
@@ -11,12 +7,13 @@
 * by the Free Software Foundation.
 *
 */
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <sys/time.h>
-#include "flatbuffers/flexbuffers.h"
-#include "flatflex_generated.h"
+#include "../header_files/flatbuffers/flexbuffers.h"
+#include "../header_files/flatflexV2_generated.h"
 
 using namespace std;
 using namespace Tables;
@@ -109,7 +106,8 @@ int main()
 	int flxSize = flx0.GetSize();
 	cout<<"FlexBuffer Size: "<<flxSize<<" bytes"<<endl;
 // ---------------------------------------Create 4MB of FlexBuffers----------------------------------------
-	for(int i=0;i<1;i++) {
+	int nRows = 20900;
+	for(int i=0;i<nRows;i++) {
 		// Serialize buffer into a Flatbuffer::Vector
 		auto flxSerial = fbbuilder.CreateVector(flxPtr);
 		// Create a Row from FlexBuffer and new ID
@@ -120,8 +118,9 @@ int main()
 //----------------------------------------Create FlatBuffer of FlexBuffers --------------------------------
 	// Serializing vector of Rows adds 12 bytes
 	auto rows_vec = fbbuilder.CreateVector(rows_vector);
-	auto table = CreateTable(fbbuilder, rows_vec);
-	fbbuilder.Finish(table);
+	int version = 1;
+	auto tableOffset = CreateTable(fbbuilder, version, rows_vec);
+	fbbuilder.Finish(tableOffset);
 
 // --------------------------------------------Start Timing Rows-------------------------------------------
 //
@@ -130,64 +129,50 @@ int main()
 	int size = fbbuilder.GetSize();
 	cout<<"Buffer Size (FlatBuffer of FlexBuffers): "<<size<<" bytes"<<endl;
 	// Check number of FlexBuffers in FlatBuffer
-	volatile auto records = GetTable(buf);
-	int recsCount = records->data()->size();
+	volatile auto table = GetMutableTable(buf);
+	int recsCount = table->data()->size();
 	cout<<"Row Count: "<<recsCount<<endl;
-	cout<<"Overhead for "<<recsCount<<" rows: "<<(size - (recsCount*flx0.GetSize()) ) / (double)recsCount<<" bytes per row"<<endl<<endl;
-	// Initialize temporary variables to store FlexBuffer data
+
+/*	// Initialize temporary variables to store FlexBuffer data
 	volatile int32_t _orderkey, _partkey, _suppkey, _linenumber;
 	volatile float _quantity, _extendedprice, _discount, _tax;
 	volatile int8_t _returnflag, _linestatus;
-
 	// 	FlexBuffers Vectors and Strings need to be Initialized to dummy values
 	// 		No flexbuffers::String() or flexbuffers::Vector() constructors
-	auto tempflxRoot = records->data()->Get(0)->rows_flexbuffer_root().AsVector();
+	auto tempflxRoot = table->data()->Get(0)->rows_flexbuffer_root().AsVector();
 	flexbuffers::Vector _shipdate = tempflxRoot[11].AsVector();
 	flexbuffers::Vector _receiptdate = tempflxRoot[11].AsVector();
 	flexbuffers::Vector _commitdate = tempflxRoot[11].AsVector();
 	flexbuffers::String _shipinstruct = tempflxRoot[15].AsString();;
 	flexbuffers::String _shipmode = tempflxRoot[15].AsString();
 	flexbuffers::String _comment = tempflxRoot[15].AsString();
-
-// ------------------------------------------------------------------------------Testing Mutation of FlexBuffer Serialized
-	
+*/
+	volatile int32_t _partkey;	
 
 	// Setup the Timing test
-	int rowNum = 0;
+	int rowNum = 0.01*nRows;
 	struct timeval start, end;
 	double t;
 
 	double avg = 0;
 	double avg2 = 0;
-	int n = 1000000;
+	int n = 1000;
 	int n2 = 10;
 	double minN = 1000000;
 	double maxN = 0;
-	// READ A ROW
+	// UPDATE A ROW
 		for(int i=0;i<n2;i++) {
 			avg = 0;
 			gettimeofday(&start, NULL);
 			for(int j=0;j<n;j++) {
-				records = GetTable(buf);
-				const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = records->data();
-				auto flxRoot = recs->Get(rowNum)->rows_flexbuffer_root();
-				auto rowVector = flxRoot.AsVector();
-				_orderkey = rowVector[0].AsUInt32();
-				_partkey = rowVector[1].AsUInt32();
-				_suppkey = rowVector[2].AsUInt32();
-				_linenumber = rowVector[3].AsUInt32();
-				_quantity = rowVector[4].AsFloat();
-				_extendedprice = rowVector[5].AsFloat();
-				_discount = rowVector[6].AsFloat();
-				_tax = rowVector[7].AsFloat();
-				_returnflag = rowVector[8].AsUInt8();
-				_linestatus = rowVector[9].AsUInt8();
-				_shipdate = rowVector[10].AsVector();
-				_receiptdate = rowVector[11].AsVector();
-				_commitdate = rowVector[12].AsVector();
-				_shipinstruct = rowVector[13].AsString();
-				_shipmode = rowVector[14].AsString();
-				_comment = rowVector[15].AsString();
+				table = GetMutableTable(buf);
+				const flatbuffers::Vector<flatbuffers::Offset<Rows>>* recs = table->data();
+				for(int k=0;k<rowNum;k++) {
+					auto flxRoot = recs->Get(k)->rows_flexbuffer_root();
+					auto mutatedCheck = flxRoot.AsVector()[1].MutateUInt(556);
+				}
+				auto _version = table->version();
+				table->mutate_version(_version+1);
 			}
 			gettimeofday(&end, NULL);
 			
@@ -199,15 +184,24 @@ int main()
 			avg2 += avg;
 		}
 		avg2 /= n2;
-	std::cout<<"Reading LINEITEM took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
-	cout<<"Reading ROW: minAccessTime- "<<minN<<" maxAccessTime- "<<maxN<<endl<<endl;
+	std::cout<<"Updating "<<rowNum<<" rows took "<< avg2<< " microseconds over "<<n<<" runs"<<std::endl;
+	cout<<"Updating ROW: minUpdateTime- "<<minN<<" maxUpdateTime- "<<maxN<<endl<<endl;
+
+	_partkey = GetTable(buf)->data()->Get( rowNum -1)->rows_flexbuffer_root().AsVector()[1].AsUInt32();
+//	auto __partkey = GetTable(buf)->data()->Get( rowNum )->rows_flexbuffer_root().AsVector()[1].AsUInt32();
+	cout<<"Partkey is: "<<partkey<<endl;
+	cout<<"Changed partkey is: "<<_partkey<<endl;
+	auto __version = table->version();
+	cout<<"Version of Table is Now: "<<__version<<endl;
+//	cout<<"Second partkey is: "<<__partkey<<endl;
+
 
 // ---------------------------- CHECKING CONTENTS OF LINEITEM IN BUFFER 
 // 				(this is only if all rows share the same data)
 //				Will compare the last FlexBuffer read with the last FlexBuffer written, or in this test, the first FlexBuffer
-	assertionCheck(orderkey, partkey, suppkey, linenumber, quantity, extendedprice, discount, tax, returnflag, linestatus, shipdate, receiptdate, commitdate,
-			shipinstruct, shipmode, comment, _orderkey, _partkey, _suppkey, _linenumber, _quantity, _extendedprice, _discount, _tax,
-			_returnflag, _linestatus, _shipdate, _receiptdate, _commitdate, _shipinstruct, _shipmode, _comment);
+//	assertionCheck(orderkey, partkey, suppkey, linenumber, quantity, extendedprice, discount, tax, returnflag, linestatus, shipdate, receiptdate, commitdate,
+///			shipinstruct, shipmode, comment, _orderkey, _partkey, _suppkey, _linenumber, _quantity, _extendedprice, _discount, _tax,
+//			_returnflag, _linestatus, _shipdate, _receiptdate, _commitdate, _shipinstruct, _shipmode, _comment);
 
 	return 0;
 }

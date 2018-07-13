@@ -7,15 +7,12 @@
 * by the Free Software Foundation.
 *
 */
-// Written by Billy Lai
-// 5/8/18
-// Reading and Writing LineItem FlatBuffers
 
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <sys/time.h>
-#include "lineitem_generated.h"
+#include "../header_files/lineitem_generated.h"
 
 using namespace std;
 using namespace Tables;

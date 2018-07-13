@@ -7,15 +7,12 @@
 * by the Free Software Foundation.
 *
 */
-// Written by Billy Lai
-// 5/15/18
-// Reading and Writing LineItem FlexBuffers
 
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <sys/time.h>
-#include "flatbuffers/flexbuffers.h"
+#include "../header_files/flatbuffers/flexbuffers.h"
 
 using namespace std;
 

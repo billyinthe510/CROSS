@@ -8,9 +8,7 @@
 *
 */
 
-// Written by Billy Lai
-// 6/25/18
-// Writing rows from files to Ceph
+// This is still in progress
 
 #include <fcntl.h> // system call open
 #include <iostream>
@@ -18,8 +16,8 @@
 #include <sstream>
 #include <map>
 #include <unistd.h>	// for getOpt
-#include "flatbuffers/flexbuffers.h"
-#include "skyhookv1_generated.h"
+#include "../header_files/flatbuffers/flexbuffers.h"
+#include "../header_files/skyhookv1_generated.h"
 
 using namespace std;
 using namespace Tables;
@@ -46,6 +44,7 @@ typedef struct {
 std::vector<std::string> split(const std::string &s, char delim);
 std::vector<int> splitDate(const std::string &s);
 string int_to_binary(uint64_t);
+void initializeNullbits(vector<uint64_t> *);
 void helpMenu();
 void promptDataFile(ifstream&, string&);
 vector<int> getSchema(vector<string>&, string&);
@@ -64,18 +63,123 @@ int findKeyIndexWithinSchema(string, string);
 uint64_t hashCompositeKey(string, vector<string>, vector<string>);
 uint64_t jumpConsistentHash(uint64_t, uint64_t);
 
-int main(int argc, char *argv[])
+int main()
 {
-	ifstream inFile;
-	string file_name = "";
-	string schema_file_name = "";
-	vector<string> composite_key;
-	vector<int> schema;
-	uint64_t num_objs = 0;
-	uint64_t num_buckets = 0;
-	uint32_t flush_rows = 0;
-	uint32_t read_rows = 0;
+	struct stat stat_buf;
+	string filename = "3.bin";
+	int rc = stat(filename.c_str(), &stat_buf);
+	int size = rc==0?stat_buf.st_size:-1;
+	cout<<"size: "<<size<<endl;	
 
+	int file = 0;
+	if( (file = open("3.bin",O_RDONLY)) < -1)
+		return -1;
+
+	// Get root pointer
+	uint8_t offset[4];
+	int current_offset = 0;
+
+	if(read(file,reinterpret_cast<char *>(&offset), 4) != 4)
+		return -1;
+	int rootPtr = (int)offset[0];
+
+	// Get vTable Offset
+	lseek(file,rootPtr,SEEK_SET);
+	if(read(file,reinterpret_cast<char *>(&offset), 4) != 4)
+		return -1;
+	int vtable = rootPtr - (int)offset[0];
+
+	// Get Data (rows_vector) Field Offset from Root FB vtable
+	int offset_to_rows_vec = 10;
+	lseek(file,vtable + offset_to_rows_vec, SEEK_SET);
+	if(read(file,reinterpret_cast<char *>(&offset), 4) != 4)
+		return -1;
+	current_offset = rootPtr + (int)offset[0];
+
+	// Get Offset to Rows Vector
+	lseek(file,current_offset,SEEK_SET);
+	if(read(file,reinterpret_cast<char *>(&offset), 4) != 4)
+		return -1;
+	current_offset += (int)offset[0];	
+
+	// Get Vector Size  within vector
+	lseek(file, current_offset, SEEK_SET);
+	if(read(file,reinterpret_cast<char *>(&offset), 4) != 4)
+		return -1;
+	int numRows = (int)offset[0];
+
+
+	vector<uint32_t> row_offsets;
+	// For each Row, get the offset to Row FB (Offsets to Row FB are 32 bit values)
+	for(int i=0;i<numRows;i++) {
+		offset[0] = offset[1] = offset[2] = offset[3] = 0;
+		current_offset += 4;
+		lseek(file, current_offset, SEEK_SET);
+		if(read(file,reinterpret_cast<char *>(&offset), 4) != 4)
+			return -1;
+		uint32_t value = (int)offset[0] + ((int)offset[1] << 8) + ((int)offset[2] << 16) + ((int)offset[3] << 24);
+
+		cout<<"value of "<<i<<" is "<<value<<endl;
+		int row_offset = current_offset + value;
+		cout<<"row is at "<<row_offset<<endl;
+	
+		lseek(file,row_offset,SEEK_SET);	
+		if(read(file,reinterpret_cast<char *>(&offset), 4) != 4)
+			return -1;
+		cout<<"POINTER #"<<(int)offset[0]<<" "<<(int)offset[1]<<" "<<(int)offset[2]<<" "<<(int)offset[3]<<endl;
+		uint32_t value2 = (int)offset[0] + ((int)offset[1] << 8) + ((int)offset[2] << 16) + ((int)offset[3] << 24);
+		int32_t vtable_offset2 = (int32_t) value2;
+		cout<<"offset from "<<row_offset<<": "<<vtable_offset2<<"= "<<row_offset-vtable_offset2<<endl;
+
+		cout<<endl;
+	}
+
+		
+
+//	lseek(file,468,SEEK_SET);
+//	uint8_t row2[251];
+//	if(read(file,reinterpret_cast<char*>(&row2),251) != 251)
+//		return -1;
+//	vector<uint8_t> p;
+//	for(int i=0;i<251;i++) {
+//		p.push_back(row2[i]);
+//	}
+//	auto row = flexbuffers::GetRoot(p).AsVector();
+//	cout<<row[2].AsUInt32()<<endl;
+
+	const int file_size = 1864;
+	lseek(file,0,SEEK_SET);
+	uint8_t bytes[file_size];
+	if(read(file,reinterpret_cast<char *>(&bytes),file_size) !=file_size)
+		return -1;
+	for(int i=0;i<file_size;i++) {
+//		if(bytes[i] == 84 || bytes[i] == 65 || bytes[i] == 75)
+//		cout<<"\t\t\t";
+		if(bytes[i] == 97 || bytes[i] == 98 || bytes[i] == 111 || bytes[i] == 118)
+			cout<<"\t\t\t";
+		int diff = i+bytes[i];
+		if(diff ==  784|| diff == 464 || diff == 156)
+			cout<<"\t\t\t\t";
+		printf("Byte %d: %u\n",i,bytes[i]);
+	}
+
+
+	lseek(file,0,SEEK_SET);
+	rc = stat(filename.c_str(), &stat_buf);
+	size = rc==0?stat_buf.st_size:-1;
+	cout<<"size: "<<size<<endl;	
+
+	uint8_t contents[1864];
+	if(read(file,reinterpret_cast<char *>(&contents), size) !=size)
+		return -1;
+	auto table = GetTable(contents);
+	const flatbuffers::Vector<flatbuffers::Offset<Row>>* recs = table->rows();
+	for(int i=0;i<6;i++) {
+		auto flxRoot = recs->Get(i)->data_flexbuffer_root();
+		auto orderkey = flxRoot.AsVector()[15].AsString();
+		cout<<"one of them: "<<orderkey.str()<<endl;
+	}
+/*
 // ----------------------------------------Verify Configurable Variables or Prompt For Them------------------------
 	int opt;
 	while( (opt = getopt(argc, argv, "hf:s:o:r:n:")) != -1) {
@@ -109,80 +213,7 @@ int main(int argc, char *argv[])
 				break;
 		}
 	}
-// -----------------------------------------Read Rows and Load into Corresponding FlatBuffer------------------------
-	map<uint64_t, bucket_t *> FBmap;
-	bucket_t *bucketPtr;
-	fbb fbPtr;
-	delete_vector *deletePtr;
-	rows_vector *rowsPtr;
-	
-	uint32_t rows_loaded_into_fb = 0;
-	vector<string> parsedRow = getNextRow(inFile);
-	
-	while( (rows_loaded_into_fb < read_rows) && (!inFile.eof()) ) {
-		// -------------------------------------------Get Row and Load into FlexBuffer---------
-
-		flexbuffers::Builder *flx = new flexbuffers::Builder();
-		vector<uint64_t> *nullbits = new vector<uint64_t>(2,0);
-
-		getFlxBuffer(flx, parsedRow, schema, nullbits);	// load parsed row into our flxBuilder and update nullbits
-		vector<uint8_t> flxPtr = flx->GetBuffer();	// get pointer to FlexBuffer
-
-		// ---------------------------------------------Hash Composite Key----------------------
-
-		uint64_t hashKey = hashCompositeKey(schema_file_name, composite_key, parsedRow);
-
-		// --------------------------------------------Get Oid Using HashKey-------------------
-
-		uint64_t oid = jumpConsistentHash(hashKey, num_objs);
-
-		// -----------------------------------------Get FB and insert--------------------------
-
-		printf("Inserting Row %d into Bucket %ld\n", rows_loaded_into_fb, oid);
-		bucketPtr = retrieveBucketFromOID(FBmap, oid);
-		fbPtr = bucketPtr->fb;
-		deletePtr = bucketPtr->deletev;
-		rowsPtr = bucketPtr->rowsv;
-
-		uint64_t RID = getNextRID();
-		
-		insertRowIntoBucket(fbPtr, RID, nullbits, SCHEMA_VERSION, flxPtr, deletePtr, rowsPtr);
-		bucketPtr->nrows++;
-		rows_loaded_into_fb++;
-		delete flx;
-		delete nullbits;
-
-		
-		// --------------------------------- Flush if rows_flush was met--------------------
-		if( rowsPtr->size() >= flush_rows) {
-			assert(bucketPtr->nrows == rowsPtr->size() );
-			assert(bucketPtr->nrows == deletePtr->size() );
-			printf("\tFlushing bucket %ld to Ceph with %d rows\n", oid, bucketPtr->nrows);
-			// Flush FlatBuffer to Ceph (currently writes to a file on disk)
-			flushFlatBuffer(FBmap, fbPtr, SKYHOOK_VERSION, bucketPtr, deletePtr, rowsPtr);
-		}
-		// Get next row
-		parsedRow = getNextRow(inFile);
-	}
-
-// ----------------------------------------Iterate over map and flush each bucket-----------------------
-	printf("\nFlush the remaining buckets in map\n");
-	for(map<uint64_t, bucket_t *>::iterator it = FBmap.begin(); it != FBmap.end(); ++it) {
-		bucketPtr = it->second;
-		
-		fbPtr = bucketPtr->fb;
-		deletePtr = bucketPtr->deletev;
-		rowsPtr = bucketPtr->rowsv;
-
-		printf("\tFlushing bucket %ld to Ceph with %d rows\n", bucketPtr->oid, bucketPtr->nrows);
-		flushFlatBuffer(FBmap, fbPtr, SKYHOOK_VERSION, bucketPtr, deletePtr, rowsPtr);
-	}
-	
-	// Close .csv file
-	if( inFile.is_open() )
-		inFile.close();
-
-
+*/
 	return 0;
 }
 
@@ -363,7 +394,6 @@ void getFlxBuffer(flxBuilder *flx, vector<string> parsedRow, vector<int> schema,
 		}
 	});
 	flx->Finish();
-	cout<<"size: "<<flx->GetSize()<<endl;
 }
 
 int findKeyIndexWithinSchema(string schemaFileName, string key) {
@@ -431,6 +461,11 @@ string int_to_binary(uint64_t value) {
 	return output;
 }
 
+void initializeNullbits(vector<uint64_t> *nullbits) {
+	nullbits->push_back((uint64_t) 0);
+	nullbits->push_back((uint64_t) 0);
+}
+
 bucket_t *retrieveBucketFromOID(map<uint64_t, bucket_t *> &FBmap, uint64_t oid) {
 	bucket_t *bucketPtr;
 	// Get FB from map or use new FB
@@ -464,7 +499,7 @@ void finishFlatBuffer(fbb fbPtr, int8_t version, string table_name, delete_vecto
 void insertRowIntoBucket(fbb fbPtr, uint64_t RID, vector<uint64_t> *nullbits, uint8_t schema_version, vector<uint8_t> flxPtr, delete_vector *deletePtr, rows_vector *rowsPtr) {
 
 	// Serialize FlexBuffer row into FlatBufferBuilder
-	auto flxSerial = fbPtr->CreateVector(flxPtr);	
+	auto flxSerial = fbPtr->CreateVector(flxPtr);
 	auto nullbitsSerial = fbPtr->CreateVector(*nullbits);
 	auto rowOffset = CreateRow(*fbPtr, RID, nullbitsSerial, schema_version, flxSerial);
 	deletePtr->push_back(0);
