@@ -1,3 +1,13 @@
+/*
+* Copyright (C) 2018 The Regents of the University of California
+* All Rights Reserved
+*
+* This library can redistribute it and/or modify under the terms
+* of the GNU Lesser General Public License Version 2.1 as published
+* by the Free Software Foundation.
+*
+*/
+
 // Written by Billy Lai
 // 6/25/18
 // Writing rows from files to Ceph
@@ -36,7 +46,6 @@ typedef struct {
 std::vector<std::string> split(const std::string &s, char delim);
 std::vector<int> splitDate(const std::string &s);
 string int_to_binary(uint64_t);
-void initializeNullbits(vector<uint64_t> *);
 void helpMenu();
 void promptDataFile(ifstream&, string&);
 vector<int> getSchema(vector<string>&, string&);
@@ -114,9 +123,7 @@ int main(int argc, char *argv[])
 		// -------------------------------------------Get Row and Load into FlexBuffer---------
 
 		flexbuffers::Builder *flx = new flexbuffers::Builder();
-		vector<uint64_t> *nullbits = new vector<uint64_t>(2);
-
-		initializeNullbits(nullbits);	// initialize nullbits to 0
+		vector<uint64_t> *nullbits = new vector<uint64_t>(2,0);
 
 		getFlxBuffer(flx, parsedRow, schema, nullbits);	// load parsed row into our flxBuilder and update nullbits
 		vector<uint8_t> flxPtr = flx->GetBuffer();	// get pointer to FlexBuffer
@@ -138,7 +145,7 @@ int main(int argc, char *argv[])
 		rowsPtr = bucketPtr->rowsv;
 
 		uint64_t RID = getNextRID();
-
+		
 		insertRowIntoBucket(fbPtr, RID, nullbits, SCHEMA_VERSION, flxPtr, deletePtr, rowsPtr);
 		bucketPtr->nrows++;
 		rows_loaded_into_fb++;
@@ -356,6 +363,7 @@ void getFlxBuffer(flxBuilder *flx, vector<string> parsedRow, vector<int> schema,
 		}
 	});
 	flx->Finish();
+	cout<<"size: "<<flx->GetSize()<<endl;
 }
 
 int findKeyIndexWithinSchema(string schemaFileName, string key) {
@@ -423,11 +431,6 @@ string int_to_binary(uint64_t value) {
 	return output;
 }
 
-void initializeNullbits(vector<uint64_t> *nullbits) {
-	nullbits->push_back((uint64_t) 0);
-	nullbits->push_back((uint64_t) 0);
-}
-
 bucket_t *retrieveBucketFromOID(map<uint64_t, bucket_t *> &FBmap, uint64_t oid) {
 	bucket_t *bucketPtr;
 	// Get FB from map or use new FB
@@ -461,7 +464,7 @@ void finishFlatBuffer(fbb fbPtr, int8_t version, string table_name, delete_vecto
 void insertRowIntoBucket(fbb fbPtr, uint64_t RID, vector<uint64_t> *nullbits, uint8_t schema_version, vector<uint8_t> flxPtr, delete_vector *deletePtr, rows_vector *rowsPtr) {
 
 	// Serialize FlexBuffer row into FlatBufferBuilder
-	auto flxSerial = fbPtr->CreateVector(flxPtr);
+	auto flxSerial = fbPtr->CreateVector(flxPtr);	
 	auto nullbitsSerial = fbPtr->CreateVector(*nullbits);
 	auto rowOffset = CreateRow(*fbPtr, RID, nullbitsSerial, schema_version, flxSerial);
 	deletePtr->push_back(0);

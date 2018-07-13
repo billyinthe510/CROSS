@@ -1,3 +1,12 @@
+/*
+* Copyright (C) 2018 The Regents of the University of California
+* All Rights Reserved
+*
+* This library can redistribute it and/or modify under the terms
+* of the GNU Lesser General Public License Version 2.1 as published
+* by the Free Software Foundation.
+*
+*/
 // Written by Billy Lai
 // 5/6/18
 // Reading and Writing LineItem FlatBuffers

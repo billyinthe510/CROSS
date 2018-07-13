@@ -15,14 +15,14 @@ struct Row;
 
 struct Table FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   enum {
-    VT_VERSION = 4,
+    VT_SKYHOOK_VERSION = 4,
     VT_TABLE_NAME = 6,
     VT_DELETE_VECTOR = 8,
     VT_ROWS = 10,
     VT_NROWS = 12
   };
-  uint8_t version() const {
-    return GetField<uint8_t>(VT_VERSION, 0);
+  uint8_t skyhook_version() const {
+    return GetField<uint8_t>(VT_SKYHOOK_VERSION, 0);
   }
   const flatbuffers::String *table_name() const {
     return GetPointer<const flatbuffers::String *>(VT_TABLE_NAME);
@@ -38,7 +38,7 @@ struct Table FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   }
   bool Verify(flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
-           VerifyField<uint8_t>(verifier, VT_VERSION) &&
+           VerifyField<uint8_t>(verifier, VT_SKYHOOK_VERSION) &&
            VerifyOffset(verifier, VT_TABLE_NAME) &&
            verifier.Verify(table_name()) &&
            VerifyOffset(verifier, VT_DELETE_VECTOR) &&
@@ -54,8 +54,8 @@ struct Table FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
 struct TableBuilder {
   flatbuffers::FlatBufferBuilder &fbb_;
   flatbuffers::uoffset_t start_;
-  void add_version(uint8_t version) {
-    fbb_.AddElement<uint8_t>(Table::VT_VERSION, version, 0);
+  void add_skyhook_version(uint8_t skyhook_version) {
+    fbb_.AddElement<uint8_t>(Table::VT_SKYHOOK_VERSION, skyhook_version, 0);
   }
   void add_table_name(flatbuffers::Offset<flatbuffers::String> table_name) {
     fbb_.AddOffset(Table::VT_TABLE_NAME, table_name);
@@ -83,7 +83,7 @@ struct TableBuilder {
 
 inline flatbuffers::Offset<Table> CreateTable(
     flatbuffers::FlatBufferBuilder &_fbb,
-    uint8_t version = 0,
+    uint8_t skyhook_version = 0,
     flatbuffers::Offset<flatbuffers::String> table_name = 0,
     flatbuffers::Offset<flatbuffers::Vector<uint8_t>> delete_vector = 0,
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<Row>>> rows = 0,
@@ -93,20 +93,20 @@ inline flatbuffers::Offset<Table> CreateTable(
   builder_.add_rows(rows);
   builder_.add_delete_vector(delete_vector);
   builder_.add_table_name(table_name);
-  builder_.add_version(version);
+  builder_.add_skyhook_version(skyhook_version);
   return builder_.Finish();
 }
 
 inline flatbuffers::Offset<Table> CreateTableDirect(
     flatbuffers::FlatBufferBuilder &_fbb,
-    uint8_t version = 0,
+    uint8_t skyhook_version = 0,
     const char *table_name = nullptr,
     const std::vector<uint8_t> *delete_vector = nullptr,
     const std::vector<flatbuffers::Offset<Row>> *rows = nullptr,
     uint32_t nrows = 0) {
   return Tables::CreateTable(
       _fbb,
-      version,
+      skyhook_version,
       table_name ? _fbb.CreateString(table_name) : 0,
       delete_vector ? _fbb.CreateVector<uint8_t>(*delete_vector) : 0,
       rows ? _fbb.CreateVector<flatbuffers::Offset<Row>>(*rows) : 0,
@@ -117,8 +117,8 @@ struct Row FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   enum {
     VT_RID = 4,
     VT_NULLBITS = 6,
-    VT_FLX_VERSION = 8,
-    VT_DATE = 10
+    VT_SCHEMA_VERSION = 8,
+    VT_DATA = 10
   };
   uint64_t RID() const {
     return GetField<uint64_t>(VT_RID, 0);
@@ -126,14 +126,14 @@ struct Row FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   const flatbuffers::Vector<uint64_t> *nullbits() const {
     return GetPointer<const flatbuffers::Vector<uint64_t> *>(VT_NULLBITS);
   }
-  uint8_t flx_version() const {
-    return GetField<uint8_t>(VT_FLX_VERSION, 0);
+  uint8_t schema_version() const {
+    return GetField<uint8_t>(VT_SCHEMA_VERSION, 0);
   }
-  const flatbuffers::Vector<uint8_t> *date() const {
-    return GetPointer<const flatbuffers::Vector<uint8_t> *>(VT_DATE);
+  const flatbuffers::Vector<uint8_t> *data() const {
+    return GetPointer<const flatbuffers::Vector<uint8_t> *>(VT_DATA);
   }
-  flexbuffers::Reference date_flexbuffer_root() const {
-    auto v = date();
+  flexbuffers::Reference data_flexbuffer_root() const {
+    auto v = data();
     return flexbuffers::GetRoot(v->Data(), v->size());
   }
   bool Verify(flatbuffers::Verifier &verifier) const {
@@ -141,9 +141,9 @@ struct Row FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            VerifyField<uint64_t>(verifier, VT_RID) &&
            VerifyOffset(verifier, VT_NULLBITS) &&
            verifier.Verify(nullbits()) &&
-           VerifyField<uint8_t>(verifier, VT_FLX_VERSION) &&
-           VerifyOffset(verifier, VT_DATE) &&
-           verifier.Verify(date()) &&
+           VerifyField<uint8_t>(verifier, VT_SCHEMA_VERSION) &&
+           VerifyOffset(verifier, VT_DATA) &&
+           verifier.Verify(data()) &&
            verifier.EndTable();
   }
 };
@@ -157,11 +157,11 @@ struct RowBuilder {
   void add_nullbits(flatbuffers::Offset<flatbuffers::Vector<uint64_t>> nullbits) {
     fbb_.AddOffset(Row::VT_NULLBITS, nullbits);
   }
-  void add_flx_version(uint8_t flx_version) {
-    fbb_.AddElement<uint8_t>(Row::VT_FLX_VERSION, flx_version, 0);
+  void add_schema_version(uint8_t schema_version) {
+    fbb_.AddElement<uint8_t>(Row::VT_SCHEMA_VERSION, schema_version, 0);
   }
-  void add_date(flatbuffers::Offset<flatbuffers::Vector<uint8_t>> date) {
-    fbb_.AddOffset(Row::VT_DATE, date);
+  void add_data(flatbuffers::Offset<flatbuffers::Vector<uint8_t>> data) {
+    fbb_.AddOffset(Row::VT_DATA, data);
   }
   explicit RowBuilder(flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
@@ -179,13 +179,13 @@ inline flatbuffers::Offset<Row> CreateRow(
     flatbuffers::FlatBufferBuilder &_fbb,
     uint64_t RID = 0,
     flatbuffers::Offset<flatbuffers::Vector<uint64_t>> nullbits = 0,
-    uint8_t flx_version = 0,
-    flatbuffers::Offset<flatbuffers::Vector<uint8_t>> date = 0) {
+    uint8_t schema_version = 0,
+    flatbuffers::Offset<flatbuffers::Vector<uint8_t>> data = 0) {
   RowBuilder builder_(_fbb);
   builder_.add_RID(RID);
-  builder_.add_date(date);
+  builder_.add_data(data);
   builder_.add_nullbits(nullbits);
-  builder_.add_flx_version(flx_version);
+  builder_.add_schema_version(schema_version);
   return builder_.Finish();
 }
 
@@ -193,14 +193,14 @@ inline flatbuffers::Offset<Row> CreateRowDirect(
     flatbuffers::FlatBufferBuilder &_fbb,
     uint64_t RID = 0,
     const std::vector<uint64_t> *nullbits = nullptr,
-    uint8_t flx_version = 0,
-    const std::vector<uint8_t> *date = nullptr) {
+    uint8_t schema_version = 0,
+    const std::vector<uint8_t> *data = nullptr) {
   return Tables::CreateRow(
       _fbb,
       RID,
       nullbits ? _fbb.CreateVector<uint64_t>(*nullbits) : 0,
-      flx_version,
-      date ? _fbb.CreateVector<uint8_t>(*date) : 0);
+      schema_version,
+      data ? _fbb.CreateVector<uint8_t>(*data) : 0);
 }
 
 inline const Tables::Table *GetTable(const void *buf) {
