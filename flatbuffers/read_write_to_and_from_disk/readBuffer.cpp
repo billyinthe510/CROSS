@@ -66,7 +66,7 @@ uint64_t jumpConsistentHash(uint64_t, uint64_t);
 int main()
 {
 	struct stat stat_buf;
-	string filename = "3.bin";
+	string filename = "obj.3.bin";
 	int rc = stat(filename.c_str(), &stat_buf);
 	int size = rc==0?stat_buf.st_size:-1;
 	cout<<"size: "<<size<<endl;	

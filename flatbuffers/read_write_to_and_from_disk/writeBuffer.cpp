@@ -48,11 +48,11 @@ vector<int> getSchema(vector<string>&, string&);
 uint32_t promptIntVariable(string, string);
 uint64_t getNextRID();
 bucket_t *retrieveBucketFromOID(map<uint64_t, bucket_t *> &, uint64_t);
-void insertRowIntoBucket(fbb, uint64_t, vector<uint64_t> *, uint8_t, vector<uint8_t>, delete_vector *, rows_vector *);
-void finishFlatBuffer(fbb, int8_t, string, delete_vector *, rows_vector *, uint32_t);
+void insertRowIntoBucket(fbb, uint64_t, vector<uint64_t> *, vector<uint8_t>, delete_vector *, rows_vector *);
+void finishFlatBuffer(fbb, uint8_t, uint8_t, string, delete_vector *, rows_vector *, uint32_t);
 void deleteBucket(bucket_t *, map<uint64_t, bucket_t *> &, uint64_t, fbb, delete_vector *, rows_vector *);
 int writeToDisk(uint64_t, fbb);
-void flushFlatBuffer(map<uint64_t, bucket_t *> &, fbb, uint8_t, bucket_t *, delete_vector *, rows_vector *);
+void flushFlatBuffer(map<uint64_t, bucket_t *> &, fbb, uint8_t, uint8_t, bucket_t *, delete_vector *, rows_vector *);
 
 vector<string> getNextRow(ifstream& inFile);
 void getFlxBuffer(flexbuffers::Builder *, vector<string>, vector<int>, vector<uint64_t> *);
@@ -142,7 +142,7 @@ int main(int argc, char *argv[])
 
 		uint64_t RID = getNextRID();
 		
-		insertRowIntoBucket(fbPtr, RID, nullbits, SCHEMA_VERSION, flxPtr, deletePtr, rowsPtr);
+		insertRowIntoBucket(fbPtr, RID, nullbits, flxPtr, deletePtr, rowsPtr);
 		bucketPtr->nrows++;
 		rows_loaded_into_fb++;
 		delete flx;
@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
 			assert(bucketPtr->nrows == deletePtr->size() );
 			printf("\tFlushing bucket %ld to Ceph with %d rows\n", oid, bucketPtr->nrows);
 			// Flush FlatBuffer to Ceph (currently writes to a file on disk)
-			flushFlatBuffer(FBmap, fbPtr, SKYHOOK_VERSION, bucketPtr, deletePtr, rowsPtr);
+			flushFlatBuffer(FBmap, fbPtr, SKYHOOK_VERSION, SCHEMA_VERSION, bucketPtr, deletePtr, rowsPtr);
 		}
 		// Get next row
 		parsedRow = getNextRow(inFile);
@@ -171,7 +171,7 @@ int main(int argc, char *argv[])
 		rowsPtr = bucketPtr->rowsv;
 
 		printf("\tFlushing bucket %ld to Ceph with %d rows\n", bucketPtr->oid, bucketPtr->nrows);
-		flushFlatBuffer(FBmap, fbPtr, SKYHOOK_VERSION, bucketPtr, deletePtr, rowsPtr);
+		flushFlatBuffer(FBmap, fbPtr, SKYHOOK_VERSION, SCHEMA_VERSION, bucketPtr, deletePtr, rowsPtr);
 	}
 	
 	// Close .csv file
@@ -448,20 +448,20 @@ bucket_t *retrieveBucketFromOID(map<uint64_t, bucket_t *> &FBmap, uint64_t oid) 
 	return bucketPtr;
 }
 
-void finishFlatBuffer(fbb fbPtr, int8_t version, string table_name, delete_vector *deletePtr, rows_vector *rowsPtr, uint32_t nrows) {
+void finishFlatBuffer(fbb fbPtr, uint8_t skyhook_v, uint8_t schema_v, string table_name, delete_vector *deletePtr, rows_vector *rowsPtr, uint32_t nrows) {
 	auto table_nameOffset = fbPtr->CreateString(table_name);
 	auto delete_vecOffset = fbPtr->CreateVector(*deletePtr);
 	auto rows_vecOffset = fbPtr->CreateVector(*rowsPtr);
-	auto tableOffset = CreateTable(*fbPtr, version, table_nameOffset, delete_vecOffset, rows_vecOffset, nrows);
+	auto tableOffset = CreateTable(*fbPtr, skyhook_v, schema_v, table_nameOffset, delete_vecOffset, rows_vecOffset, nrows);
 	fbPtr->Finish(tableOffset);
 }
 
-void insertRowIntoBucket(fbb fbPtr, uint64_t RID, vector<uint64_t> *nullbits, uint8_t schema_version, vector<uint8_t> flxPtr, delete_vector *deletePtr, rows_vector *rowsPtr) {
+void insertRowIntoBucket(fbb fbPtr, uint64_t RID, vector<uint64_t> *nullbits, vector<uint8_t> flxPtr, delete_vector *deletePtr, rows_vector *rowsPtr) {
 
 	// Serialize FlexBuffer row into FlatBufferBuilder
 	auto flxSerial = fbPtr->CreateVector(flxPtr);	
 	auto nullbitsSerial = fbPtr->CreateVector(*nullbits);
-	auto rowOffset = CreateRow(*fbPtr, RID, nullbitsSerial, schema_version, flxSerial);
+	auto rowOffset = CreateRow(*fbPtr, RID, nullbitsSerial, flxSerial);
 	deletePtr->push_back(0);
 	rowsPtr->push_back(rowOffset);
 }
@@ -485,7 +485,7 @@ uint64_t getNextRID() {
 
 int writeToDisk(uint64_t oid, fbb fbPtr) {
 	
-	string file_name = to_string(oid) + ".bin";
+	string file_name = "obj." + to_string(oid) + ".bin";
 	int fd = open(file_name.c_str(), O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
 	if( fd < 0 ) {
 		printf("Error opening '\%s'!\n", file_name.c_str());
@@ -515,9 +515,9 @@ int writeToDisk(uint64_t oid, fbb fbPtr) {
 	return 0;
 }
 
-void flushFlatBuffer(map<uint64_t, bucket_t *> &FBmap, fbb fbPtr, uint8_t SKYHOOK_VERSION, bucket_t *bucketPtr, delete_vector *deletePtr, rows_vector *rowsPtr) {
+void flushFlatBuffer(map<uint64_t, bucket_t *> &FBmap, fbb fbPtr, uint8_t skyhook_v, uint8_t schema_v, bucket_t *bucketPtr, delete_vector *deletePtr, rows_vector *rowsPtr) {
 	// Finish FlatBuffer
-	finishFlatBuffer(fbPtr, SKYHOOK_VERSION, bucketPtr->table_name, deletePtr, rowsPtr, bucketPtr->nrows);
+	finishFlatBuffer(fbPtr, skyhook_v, schema_v, bucketPtr->table_name, deletePtr, rowsPtr, bucketPtr->nrows);
 
 	uint64_t oid = bucketPtr->oid;
 	// Flush to Ceph Here TO OID bucket with n Rows or Crash if Failed
