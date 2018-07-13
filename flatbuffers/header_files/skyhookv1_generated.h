@@ -18,9 +18,10 @@ struct Table FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
     VT_SKYHOOK_VERSION = 4,
     VT_SCHEMA_VERSION = 6,
     VT_TABLE_NAME = 8,
-    VT_DELETE_VECTOR = 10,
-    VT_ROWS = 12,
-    VT_NROWS = 14
+    VT_SCHEMA = 10,
+    VT_DELETE_VECTOR = 12,
+    VT_ROWS = 14,
+    VT_NROWS = 16
   };
   uint8_t skyhook_version() const {
     return GetField<uint8_t>(VT_SKYHOOK_VERSION, 0);
@@ -30,6 +31,9 @@ struct Table FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
   }
   const flatbuffers::String *table_name() const {
     return GetPointer<const flatbuffers::String *>(VT_TABLE_NAME);
+  }
+  const flatbuffers::String *schema() const {
+    return GetPointer<const flatbuffers::String *>(VT_SCHEMA);
   }
   const flatbuffers::Vector<uint8_t> *delete_vector() const {
     return GetPointer<const flatbuffers::Vector<uint8_t> *>(VT_DELETE_VECTOR);
@@ -46,6 +50,8 @@ struct Table FLATBUFFERS_FINAL_CLASS : private flatbuffers::Table {
            VerifyField<uint8_t>(verifier, VT_SCHEMA_VERSION) &&
            VerifyOffset(verifier, VT_TABLE_NAME) &&
            verifier.Verify(table_name()) &&
+           VerifyOffset(verifier, VT_SCHEMA) &&
+           verifier.Verify(schema()) &&
            VerifyOffset(verifier, VT_DELETE_VECTOR) &&
            verifier.Verify(delete_vector()) &&
            VerifyOffset(verifier, VT_ROWS) &&
@@ -67,6 +73,9 @@ struct TableBuilder {
   }
   void add_table_name(flatbuffers::Offset<flatbuffers::String> table_name) {
     fbb_.AddOffset(Table::VT_TABLE_NAME, table_name);
+  }
+  void add_schema(flatbuffers::Offset<flatbuffers::String> schema) {
+    fbb_.AddOffset(Table::VT_SCHEMA, schema);
   }
   void add_delete_vector(flatbuffers::Offset<flatbuffers::Vector<uint8_t>> delete_vector) {
     fbb_.AddOffset(Table::VT_DELETE_VECTOR, delete_vector);
@@ -94,6 +103,7 @@ inline flatbuffers::Offset<Table> CreateTable(
     uint8_t skyhook_version = 0,
     uint8_t schema_version = 0,
     flatbuffers::Offset<flatbuffers::String> table_name = 0,
+    flatbuffers::Offset<flatbuffers::String> schema = 0,
     flatbuffers::Offset<flatbuffers::Vector<uint8_t>> delete_vector = 0,
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<Row>>> rows = 0,
     uint32_t nrows = 0) {
@@ -101,6 +111,7 @@ inline flatbuffers::Offset<Table> CreateTable(
   builder_.add_nrows(nrows);
   builder_.add_rows(rows);
   builder_.add_delete_vector(delete_vector);
+  builder_.add_schema(schema);
   builder_.add_table_name(table_name);
   builder_.add_schema_version(schema_version);
   builder_.add_skyhook_version(skyhook_version);
@@ -112,6 +123,7 @@ inline flatbuffers::Offset<Table> CreateTableDirect(
     uint8_t skyhook_version = 0,
     uint8_t schema_version = 0,
     const char *table_name = nullptr,
+    const char *schema = nullptr,
     const std::vector<uint8_t> *delete_vector = nullptr,
     const std::vector<flatbuffers::Offset<Row>> *rows = nullptr,
     uint32_t nrows = 0) {
@@ -120,6 +132,7 @@ inline flatbuffers::Offset<Table> CreateTableDirect(
       skyhook_version,
       schema_version,
       table_name ? _fbb.CreateString(table_name) : 0,
+      schema ? _fbb.CreateString(schema) : 0,
       delete_vector ? _fbb.CreateVector<uint8_t>(*delete_vector) : 0,
       rows ? _fbb.CreateVector<flatbuffers::Offset<Row>>(*rows) : 0,
       nrows);
