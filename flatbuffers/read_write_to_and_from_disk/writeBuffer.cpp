@@ -23,7 +23,7 @@ using namespace Tables;
 const uint8_t SKYHOOK_VERSION = 1;
 const uint8_t SCHEMA_VERSION = 1;
 const string SCHEMA = " ";
-uint64_t RID = 0;
+uint64_t RID = 1;
 enum DataType {TypeInt = 1, TypeDouble, TypeChar, TypeDate, TypeString};
 typedef flatbuffers::FlatBufferBuilder fbBuilder;
 typedef flatbuffers::FlatBufferBuilder* fbb;
