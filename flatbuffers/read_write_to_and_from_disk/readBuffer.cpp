@@ -15,7 +15,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <map>
+#include <algorithm> // for string reversal
 #include <unistd.h>	// for getOpt
 #include "../header_files/flatbuffers/flexbuffers.h"
 #include "../header_files/skyhookv1_generated.h"
@@ -37,7 +37,11 @@ const int offset_to_data = 8;
 
 enum DataType {TypeInt = 1, TypeDouble, TypeChar, TypeDate, TypeString};
 
+typedef flatbuffers::FlatBufferBuilder fbBuilder;
+typedef flatbuffers::FlatBufferBuilder* fbb;
+typedef flexbuffers::Builder flxBuilder;
 typedef vector<uint8_t> delete_vector;
+typedef vector<flatbuffers::Offset<Row>> rows_vector;
 
 typedef struct {
 	int skyhook_version;
@@ -77,7 +81,7 @@ typedef struct {
 vector<string> split(const string &, char);
 void helpMenu();
 void promptDataFile(string&, int&);
-vector<int> getSchema(vector<string>&, string&);
+string getReturnSchema(vector<int> &, vector<int> &, string&);
 uint32_t promptIntVariable(string, string);
 
 void readOffset(int, int, uint8_t *);
@@ -89,16 +93,17 @@ void readData(int, int, vector<uint8_t> &);
 void find_vtable_given_row_ptr(int fd, int row_ptr);
 void printBuffer(int, int);
 void printRootHeader(root_header *);
-void rowHeaderCheck(row_header *, row_header *);
-void lineitemCheck(lineitem *, lineitem *);
+void rootHeaderAssertion(const Tables::Table *, root_header *);
+void rowHeaderAssertion(const Tables::Table *, int, row_header *);
+void lineitemAssertion(const Tables::Table *, int, vector<uint8_t> &);
 
 int main(int argc, char *argv[])
 {
 	int fd;
 	string file_name = "";
 	string schema_file_name = "";
-	vector<string> composite_key;
-	vector<int> schema;
+	vector<int> returnSchema, returnTypes;
+	string returnSchemaString = "";
 // ----------------------------------------Verify Configurable Variables or Prompt For Them------------------------
 	int opt;
 	while( (opt = getopt(argc, argv, "hf:s:")) != -1) {
@@ -111,7 +116,7 @@ int main(int argc, char *argv[])
 			case 's':
 				// Get Schema (vector of enum types), schema file name, composite key
 				schema_file_name = optarg;
-				schema = getSchema(composite_key, schema_file_name);	// returns vector of enum data types and composite keys
+				returnSchemaString = getReturnSchema(returnSchema, returnTypes, schema_file_name);	// gets output schema and types
 				break;
 			case 'h':
 				helpMenu();
@@ -129,11 +134,10 @@ int main(int argc, char *argv[])
 // ----------------------------------- Get FlatBuffer using Object API ----------------------------------------------
 	const int file_size = size;
 	lseek(fd,0,SEEK_SET);
-	uint8_t contents[file_size];
-	if(read(fd,reinterpret_cast<char *>(&contents), file_size) != file_size)
+	uint8_t *contents = new uint8_t[file_size];
+	if(read(fd,reinterpret_cast<char *>(contents), file_size) != file_size)
 		return -1;
 	auto table = GetTable(contents);
-	const flatbuffers::Vector<flatbuffers::Offset<Row>>* recs = table->rows();
 
 // -------------------------------------- Get data using our API ----------------------------------------------------
 
@@ -141,7 +145,8 @@ int main(int argc, char *argv[])
 	root_header *root = new root_header();
 	readRootHeader(fd, root);
 	printRootHeader(root);
-
+	rootHeaderAssertion(table, root);	// compares our header with object APIs header
+	cout<<endl;
 	
 	// Get ROW_TABLE Offsets
 	vector<int> row_offsets;
@@ -154,72 +159,112 @@ int main(int argc, char *argv[])
 		readRowHeader(fd, row_offsets[i], row);
 		rows.push_back(row);
 
-		row_header *api_header = new row_header();
-		api_header->RID = recs->Get(i)->RID();
-		auto nullbits = recs->Get(i)->nullbits();
-		for(int j=0;j<(int)nullbits[0].size();j++) {
-			api_header->nullbits.push_back(nullbits[0][j]);
-			cout<<"api_header "<<i<<" bits: "<<api_header->nullbits[j]<<endl;
-			cout<<"my_header "<<i<<" bits: "<<row->nullbits[j]<<endl;
-		}
-//		rowHeaderCheck(row, api_header);
-		delete api_header;
+		rowHeaderAssertion(table, i, row);	// compares row 'i's header with object API row header
 	}
+	cout<<endl;
 
-	// Get Data FlexBuffer for each row
-	for(int i=0;i< (int)rows.size();i++) {
-		lineitem *row1 = new lineitem();
-		lineitem *row2 = new lineitem();
+	// Get Data FlexBuffer for each row and check with Flatbuffers API
+	for(int rowNum=0;rowNum<(int)rows.size();rowNum++) {
+		vector<uint8_t> data;
+		readData(fd, rows[rowNum]->data_offset, data);
+		lineitemAssertion(table, rowNum, data);		// compare data flexbuffer with object API
+	}
+	cout<<endl;
 
-		// Get data row using flatbuffers api
-		auto api_row = recs->Get(i)->data_flexbuffer_root().AsVector();
-		row1->orderkey = api_row[0].AsInt32();
-		row1->partkey = api_row[1].AsInt32();
-		row1->suppkey = api_row[2].AsInt32();
-		row1->linenumber = api_row[3].AsInt32();
-		row1->quantity = api_row[4].AsFloat();
-		row1->extendedprice = api_row[5].AsFloat();
-		row1->discount = api_row[6].AsFloat();
-		row1->tax = api_row[7].AsFloat();
-		row1->returnflag = api_row[8].AsInt8();
-		row1->linestatus = api_row[9].AsInt8();
-		row1->shipdate = api_row[10].AsString().str();
-		row1->receiptdate = api_row[11].AsString().str();
-		row1->commitdate = api_row[12].AsString().str();
-		row1->shipinstruct = api_row[13].AsString().str();
-		row1->shipmode = api_row[14].AsString().str();
-		row1->comment = api_row[15].AsString().str();
-
-		// Get data row using our api
+	// Build return flatbuffer
+	fbBuilder fb(1024);
+	delete_vector dead_vector;
+	rows_vector row_vector;
+	cout<<"Return Schema String:"<<endl;
+	cout<<returnSchemaString<<endl<<endl;
+	cout<<"Here are the rows returned:"<<endl;
+	cout<<"\tSome values may be null, check nullbit vector first!"<<endl;
+	cout<<"\tDefault null values were encoded in getFlexBuffer(..) function in writeBuffer.cpp"<<endl;
+	for(int i = 0; i < (int)rows.size(); i++) {
+		// Get FlexBuffer Data
 		vector<uint8_t> data;
 		readData(fd, rows[i]->data_offset, data);
-		auto row = flexbuffers::GetRoot(data).AsVector();
-		row2->orderkey = row[0].AsInt32();
-		row2->partkey = row[1].AsInt32();
-		row2->suppkey = row[2].AsInt32();
-		row2->linenumber = row[3].AsInt32();
-		row2->quantity = row[4].AsFloat();
-		row2->extendedprice = row[5].AsFloat();
-		row2->discount = row[6].AsFloat();
-		row2->tax = row[7].AsFloat();
-		row2->returnflag = row[8].AsInt8();
-		row2->linestatus = row[9].AsInt8();
-		row2->shipdate = row[10].AsString().str();
-		row2->receiptdate = row[11].AsString().str();
-		row2->commitdate = row[12].AsString().str();
-		row2->shipinstruct = row[13].AsString().str();
-		row2->shipmode = row[14].AsString().str();
-		row2->comment = row[15].AsString().str();
-	
-		lineitemCheck(row1, row2);
+		auto flxRow = flexbuffers::GetRoot(data).AsVector();
+		
+		flexbuffers::Builder *flx = new flexbuffers::Builder();
+		flx->Vector([&]() {
+			// returnSchema maps to column # in original schema
+			// returnType maps to enum data type
+			for(int j=0;j<(int)returnSchema.size();j++) {
 
-		delete row1;
-		delete row2;
+				if(returnSchema[j] < 0 ) {
+					// A negative column # means not in original schema
+					// Do some processing (SUM, COUNT, etc)
+				}
+				else {
+					switch(returnTypes[j]) {
+						case TypeInt: {
+							int value = flxRow[returnSchema[j]].AsInt32();
+							flx->Int(value);
+							cout<<value;
+							break;
+						}
+						case TypeDouble: {
+							double value = flxRow[returnSchema[j]].AsDouble();
+							flx->Double(value);
+							cout<<value;
+							break;
+						}
+						case TypeChar: {
+							int8_t value = flxRow[returnSchema[j]].AsInt8();
+							flx->Int(value);
+							cout<<(char)value;
+							break;
+						}
+						case TypeDate: {
+							string line = flxRow[returnSchema[j]].AsString().str();
+							flx->String(line);
+							cout<<line;
+							break;
+						}
+						case TypeString: {
+							string line = flxRow[returnSchema[j]].AsString().str();
+							flx->String(line);
+							cout<<line;
+							break;
+						}
+						default: {
+							// This is for other enum types for aggregations, e.g. SUM, MAX, MIN....
+							flx->String("EMPTY");
+							break;
+						}
+					}
+				}
+				// Display a '|' to separate rows
+				if( j != (int)returnSchema.size() - 1 )
+					cout<<"|";
+				if( j == (int)returnSchema.size() -1 )
+					cout<<endl;
+			}
+		});
+		flx->Finish();
+		auto flx_serial = fb.CreateVector(flx->GetBuffer());
+		auto flx_nullbits =  fb.CreateVector(rows[i]->nullbits);
+		// Create Row with current flexbuffer row
+		auto rowOffset = CreateRow(fb, rows[i]->RID, flx_nullbits, flx_serial);
+		// Continue building dead vector and rowOffsets vector
+		dead_vector.push_back('0');
+		row_vector.push_back(rowOffset);
+		delete flx;
 	}
+	auto table_nameOffset = fb.CreateString(root->table_name);
+	auto schema_Offset = fb.CreateString(returnSchemaString);
+	auto delete_vecOffset = fb.CreateVector(dead_vector);
+	auto rows_vecOffset = fb.CreateVector(row_vector);
+	auto tableOffset = CreateTable(fb, root->skyhook_version, root->schema_version, table_nameOffset, schema_Offset, delete_vecOffset, rows_vecOffset, root->nrows);
+	fb.Finish(tableOffset);
+	printf("\nReturn FlatBuffer has been finished!\n");
 
-
+	// Used for displaying and debugging entire FlatBuffer
 	// printBuffer(fd, size);	
 
+	// Free all memory that was allocated
+	delete [] contents;
 	delete root;
 	for(int i=0;i<root->nrows;i++)
 		delete rows[i];
@@ -277,9 +322,9 @@ uint32_t promptIntVariable(string variable, string num_string) {
 	return n;
 }
 
-vector<int> getSchema(vector<string>& compositeKey, string& schema_file_name) {
+string getReturnSchema(vector<int> &returnSchema, vector<int> &returnTypes, string& schema_file_name) {
 	ifstream schemaFile;
-	vector<int> schema;
+	string returnSchemaString = "";	
 
 	// Try to open schema file
 	schemaFile.open(schema_file_name, std::ifstream::in);
@@ -291,25 +336,32 @@ vector<int> getSchema(vector<string>& compositeKey, string& schema_file_name) {
 			exit(0);
 
 		cout<<"Cannot open file! \t\t(Press Q or q to quit program)"<<endl;
-		cout<<"Which file will we get the schema from? : ";
+		cout<<"Which file will we get the return schema from? : ";
 		getline(cin, schema_file_name);
 		schemaFile.open(schema_file_name, ifstream::in);
 	}
 	// Parse Schema File for Composite Key
 	string line = "";
 	getline(schemaFile, line);
+	// Unused compositeKey
+	vector<string> compositeKey;
 	compositeKey = split(line,' ');
 
 	// Parse Schema File for Data Types
 	while( getline(schemaFile, line) ) {
+		// Get return schema and return type
 		vector<string> parsedData = split(line, ' ');
-		schema.push_back( atoi(parsedData[3].c_str()) );
+		returnSchema.push_back( atoi(parsedData[0].c_str()) );
+		returnTypes.push_back( atoi(parsedData[1].c_str()) );
+		
+		// Build schema string for return
+		returnSchemaString += parsedData[0] + " " + parsedData[1] + "|";
 	}
 
 	cout<<"'"<<schema_file_name<<"' was sucessfully read and schema vector passed back!"<<endl<<endl;
 	schemaFile.close();
 	
-	return schema;
+	return returnSchemaString;
 }
 
 void readOffset(int fd, int current_offset, uint8_t *offset) {
@@ -442,8 +494,13 @@ void readRowHeader(int fd, int row_table_ptr, row_header *row) {
 	uint8_t nullbits[nullbits_size*sizeof(double)];
 	if(read(fd, reinterpret_cast<char *>(&nullbits), nullbits_size*sizeof(double)) != (int)(nullbits_size*sizeof(double)))
 		exit(-1);
-	uint64_t null0 = (uint64_t)nullbits[0];
-	uint64_t null1 = (uint64_t)nullbits[8];
+		// Building the two uint64_t values for nullbits vector
+		// Done by manually shifting each bit and then summing them
+		// Swaps endianness (or it reads little endian into a 64-bit int value)
+	uint64_t null0 = (uint64_t)nullbits[0] + ((uint64_t)nullbits[1]<<8) + ((uint64_t)nullbits[2]<<16) + ((uint64_t)nullbits[3]<<24) + ((uint64_t)nullbits[4]<<32) +
+				 ((uint64_t)nullbits[5]<<40) + ((uint64_t)nullbits[6]<<48) + ((uint64_t)nullbits[7]<<56);
+	uint64_t null1 = (uint64_t)nullbits[8] + ((uint64_t)nullbits[9]<<8) + ((uint64_t)nullbits[10]<<16) + ((uint64_t)nullbits[11]<<24) + ((uint64_t)nullbits[12]<<32) +
+				 ((uint64_t)nullbits[13]<<40) + ((uint64_t)nullbits[14]<<48) + ((uint64_t)nullbits[15]<<56);
 	row->nullbits.push_back(null0);
 	row->nullbits.push_back(null1);
 
@@ -533,13 +590,95 @@ void printRootHeader(root_header *root) {
 	cout<<endl;
 }
 
-void rowHeaderCheck(row_header *row1, row_header *row2) {
-	assert(row1->RID == row2->RID);
-	for(int i=0; i<(int)row1->nullbits.size(); i++)
-		assert(row1->nullbits[i] == row2->nullbits[i]);
+void rootHeaderAssertion(const Tables::Table *table, root_header *root) {
+	// Get API root_header
+	root_header *api_root = new root_header();
+	api_root->skyhook_version = table->skyhook_version();
+	api_root->schema_version = table->schema_version();
+	api_root->table_name = table->table_name()->str();
+	api_root->schema = table->schema()->str();
+	auto root_delete_vec = table->delete_vector();
+	for(int i=0;i<(int)root_delete_vec->size();i++)
+		api_root->delete_vec.push_back(root_delete_vec->Get(i));
+	api_root->nrows = table->nrows();
+
+	// Check that API root_header is the same as our root_header
+	assert(api_root->skyhook_version == root->skyhook_version);
+	assert(api_root->schema_version == root->schema_version);
+	assert(strcmp(api_root->table_name.c_str(), root->table_name.c_str()) == 0);
+	assert(strcmp(api_root->schema.c_str(), root->schema.c_str()) == 0);
+	for(int i=0; i<(int)api_root->delete_vec.size(); i++)
+		assert(api_root->delete_vec[i] == root->delete_vec[i]);
+	assert(api_root->nrows == root->nrows);
+	
+	delete api_root;
+	printf("Root Header Assertion Passed!\n");
 }
 
-void lineitemCheck(lineitem *row1, lineitem *row2) {
+void rowHeaderAssertion(const Tables::Table *table, int rowNum, row_header *row) {
+	// Get API row_header
+	const flatbuffers::Vector<flatbuffers::Offset<Row>>* recs = table->rows();
+	auto api_row = recs->Get(rowNum);
+
+	row_header *api_row_header = new row_header();
+	api_row_header->RID = api_row->RID();
+	auto nullbits = api_row->nullbits();
+	for(int j=0;j<(int)nullbits[0].size();j++) {
+		api_row_header->nullbits.push_back(nullbits[0][j]);
+	}
+	
+	// Assert that API row_header is the same as our row_header
+	assert(api_row_header->RID == row->RID);
+	for(int i=0; i<(int)row->nullbits.size(); i++)
+		assert(api_row_header->nullbits[i] == row->nullbits[i]);
+	
+	delete api_row_header;
+	printf("Row Header Assertion Passed!\n");
+}
+
+void lineitemAssertion(const Tables::Table *table, int rowNum, vector<uint8_t> &data) {
+	lineitem *row1 = new lineitem();
+	lineitem *row2 = new lineitem();
+
+	// Get data row using flatbuffers api
+	const flatbuffers::Vector<flatbuffers::Offset<Row>>* recs = table->rows();
+	auto api_row = recs->Get(rowNum)->data_flexbuffer_root().AsVector();
+	row1->orderkey = api_row[0].AsInt32();
+	row1->partkey = api_row[1].AsInt32();
+	row1->suppkey = api_row[2].AsInt32();
+	row1->linenumber = api_row[3].AsInt32();
+	row1->quantity = api_row[4].AsFloat();
+	row1->extendedprice = api_row[5].AsFloat();
+	row1->discount = api_row[6].AsFloat();
+	row1->tax = api_row[7].AsFloat();
+	row1->returnflag = api_row[8].AsInt8();
+	row1->linestatus = api_row[9].AsInt8();
+	row1->shipdate = api_row[10].AsString().str();
+	row1->receiptdate = api_row[11].AsString().str();
+	row1->commitdate = api_row[12].AsString().str();
+	row1->shipinstruct = api_row[13].AsString().str();
+	row1->shipmode = api_row[14].AsString().str();
+	row1->comment = api_row[15].AsString().str();
+
+	// Get data row using our api
+	auto row = flexbuffers::GetRoot(data).AsVector();
+	row2->orderkey = row[0].AsInt32();
+	row2->partkey = row[1].AsInt32();
+	row2->suppkey = row[2].AsInt32();
+	row2->linenumber = row[3].AsInt32();
+	row2->quantity = row[4].AsFloat();
+	row2->extendedprice = row[5].AsFloat();
+	row2->discount = row[6].AsFloat();
+	row2->tax = row[7].AsFloat();
+	row2->returnflag = row[8].AsInt8();
+	row2->linestatus = row[9].AsInt8();
+	row2->shipdate = row[10].AsString().str();
+	row2->receiptdate = row[11].AsString().str();
+	row2->commitdate = row[12].AsString().str();
+	row2->shipinstruct = row[13].AsString().str();
+	row2->shipmode = row[14].AsString().str();
+	row2->comment = row[15].AsString().str();
+	
 	assert(row1->orderkey == row2->orderkey);
 	assert(row1->partkey == row2->partkey);
 	assert(row1->suppkey == row2->suppkey);
@@ -561,4 +700,8 @@ void lineitemCheck(lineitem *row1, lineitem *row2) {
 	assert( strcmp( row1->shipmode.c_str(), row2->shipmode.c_str() ) == 0);
 	assert( strcmp( row1->comment.c_str(), row2->comment.c_str() ) == 0);
 
+	delete row1;
+	delete row2;
+	
+	printf("Lineitem Data Assertion Passed!\n");
 }
